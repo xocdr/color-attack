@@ -1,0 +1,12 @@
+{
+  "name": "color-attack-demo",
+  "version": "1.0.0",
+  "author": "Color Attack Demo",
+  "description": "Color Attack Demo — cross-platform 2D canvas app",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "cd electron && npm install --prefer-offline && npm start",
+    "build": "cd electron && npm install --prefer-offline && npm run build",
+    "serve": "npx serve -p 5500 ."
+  }
+}
