@@ -1,95 +1,729 @@
-// ─── Color Attack Demo ───────────────────────────────────────────────────────
+// ─── Color Attack TCG ─────────────────────────────────────────────────────────
 // Pure vanilla JS + HTML5 Canvas. No dependencies. No build step.
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// ─── Layout constants ────────────────────────────────────────────────────────
-const SQUARE_SIZE = () => Math.min(canvas.width, canvas.height) * 0.22;
-const BUTTON_SIZE = () => Math.min(canvas.width * 0.13, canvas.height * 0.11, 90);
-const HALF = () => canvas.height * 0.5;
-
-// Color palette — damage, heal, cooldown (ms), shake intensity, card image
+// ─── Color palette (visual/audio reference) ───────────────────────────────────
 const COLORS = [
-  { id: 'yellow', label: 'Yellow', hex: '#FFD700', dark: '#b89800', glow: '#ffe87a', damage: 10, heal: 0,  cooldown: 500,  shakeAmt: 3,  img: 'src/card-img/ai-image-generator-1780303159315.png' },
-  { id: 'orange', label: 'Orange', hex: '#FF8C00', dark: '#c46000', glow: '#ffb84d', damage: 15, heal: 0,  cooldown: 1000, shakeAmt: 5,  img: 'src/card-img/ai-image-generator-1780302582434.png' },
-  { id: 'red',    label: 'Red',    hex: '#FF2222', dark: '#bb0000', glow: '#ff7777', damage: 25, heal: 0,  cooldown: 1500, shakeAmt: 9,  img: 'src/card-img/ai-image-generator-1780302782081.png' },
-  { id: 'purple', label: 'Purple', hex: '#9B30FF', dark: '#5a0099', glow: '#cc88ff', damage: 20, heal: 0,  cooldown: 2000, shakeAmt: 7,  img: 'src/card-img/ai-image-generator-1780302672969.png' },
-  { id: 'blue',   label: 'Blue',   hex: '#1E90FF', dark: '#0050bb', glow: '#88ccff', damage: 12, heal: 0,  cooldown: 2000, shakeAmt: 4,  img: 'src/card-img/ai-image-generator-1780303293899.png' },
-  { id: 'green',  label: 'Green',  hex: '#22DD55', dark: '#007722', glow: '#88ffaa', damage: 0,  heal: 20, cooldown: 1000, shakeAmt: 0,  img: 'src/card-img/ai-image-generator-1780303021745.png' },
+  { id: 'yellow', label: 'Yellow', hex: '#FFD700', dark: '#b89800', glow: '#ffe87a' },
+  { id: 'orange', label: 'Orange', hex: '#FF8C00', dark: '#c46000', glow: '#ffb84d' },
+  { id: 'red',    label: 'Red',    hex: '#FF2222', dark: '#bb0000', glow: '#ff7777' },
+  { id: 'purple', label: 'Purple', hex: '#9B30FF', dark: '#5a0099', glow: '#cc88ff' },
+  { id: 'blue',   label: 'Blue',   hex: '#1E90FF', dark: '#0050bb', glow: '#88ccff' },
+  { id: 'green',  label: 'Green',  hex: '#22DD55', dark: '#007722', glow: '#88ffaa' },
 ];
 
-const MAX_HP        = 100;
-const COMBO_WINDOW  = 3000; // ms before hit-combo resets
-const COMBO_SEQ_WINDOW = 2500; // ms window to press 2nd button for a sequence combo
-const ATTACK_COLORS = COLORS.filter(c => c.id !== 'green');
+// ─── Card definitions ─────────────────────────────────────────────────────────
+const CARD_DEFS = {
+  yellow: { name: 'Spark',  mana: 1, atk: 1, def: 2, ability: null },
+  orange: { name: 'Ember',  mana: 2, atk: 2, def: 3, ability: null },
+  red:    { name: 'Blaze',  mana: 3, atk: 4, def: 1, ability: 'charge' },
+  purple: { name: 'Void',   mana: 3, atk: 3, def: 2, ability: null },
+  blue:   { name: 'Frost',  mana: 2, atk: 1, def: 5, ability: 'taunt' },
+  green:  { name: 'Nature', mana: 2, atk: 0, def: 4, ability: 'heal' },
+};
+const COLOR_IDS = ['yellow', 'orange', 'red', 'purple', 'blue', 'green'];
 
-// Two-color sequence combos
-const COMBO_PAIRS = [
-  { ids: ['yellow', 'blue'],   name: 'STATIC ICE STORM',
-    beamColor: COLORS.find(c => c.id === 'yellow'), impactColor: COLORS.find(c => c.id === 'blue'),
-    damage: 30, healAmount: 0,  shakeAmt: 8  },
-  { ids: ['orange', 'red'],    name: 'MAGMA SURGE',
-    beamColor: COLORS.find(c => c.id === 'orange'), impactColor: COLORS.find(c => c.id === 'red'),
-    damage: 45, healAmount: 0,  shakeAmt: 12 },
-  { ids: ['red', 'purple'],    name: 'VOID BLAST',
-    beamColor: COLORS.find(c => c.id === 'red'),    impactColor: COLORS.find(c => c.id === 'purple'),
-    damage: 38, healAmount: 0,  shakeAmt: 10 },
-  { ids: ['purple', 'blue'],   name: 'CRYO PULSE',
-    beamColor: COLORS.find(c => c.id === 'purple'), impactColor: COLORS.find(c => c.id === 'blue'),
-    damage: 28, healAmount: 0,  shakeAmt: 7  },
-  { ids: ['blue', 'green'],    name: 'GLACIAL HEAL',
-    beamColor: COLORS.find(c => c.id === 'blue'),   impactColor: COLORS.find(c => c.id === 'blue'),
-    damage: 18, healAmount: 30, shakeAmt: 5  },
-];
-
-// Preload card images
-const cardImages = {};
-COLORS.forEach(c => {
+// ─── Card art images ──────────────────────────────────────────────────────────
+const CARD_IMAGES = {};
+const CARD_IMAGE_PATHS = {
+  yellow: 'src/card-img/ai-image-generator-1780303159315.png',
+  orange: 'src/card-img/ai-image-generator-1780302582434.png',
+  red:    'src/card-img/ai-image-generator-1780302782081.png',
+  purple: 'src/card-img/ai-image-generator-1780302672969.png',
+  blue:   'src/card-img/ai-image-generator-1780303293899.png',
+  green:  'src/card-img/ai-image-generator-1780303021745.png',
+};
+COLOR_IDS.forEach(id => {
   const img = new Image();
-  img.src = c.img;
-  cardImages[c.id] = img;
+  img.src = CARD_IMAGE_PATHS[id];
+  CARD_IMAGES[id] = img;
 });
 
-// ─── State ───────────────────────────────────────────────────────────────────
-let particles    = [];
-let playerFlash  = null;   // { color, t } — player charges
-let enemyFlash   = null;   // { color, t } — enemy charges before counter
-let enemyImpact  = null;   // { color, t, spawned? } — enemy gets hit
-let playerImpact = null;   // { color, t, spawned? } — player gets hit
-let buttons      = [];
-let busy         = false;
+// ─── Level / merge system ─────────────────────────────────────────────────────
+const MAX_LEVEL = 3;
 
-let playerHP  = MAX_HP;
-let enemyHP   = MAX_HP;
-let gameOver  = false;     // false | 'enemy'
+function getMergedCard(base) {
+  if (base.level >= MAX_LEVEL) return null;
+  const def  = CARD_DEFS[base.id];
+  const lvl  = base.level + 1;
+  const mult = lvl === 2 ? 1.65 : 2.6;
+  return {
+    ...base,
+    level:       lvl,
+    attack:      Math.ceil(def.atk * mult),
+    defense:     Math.ceil(def.def * mult),
+    maxDefense:  Math.ceil(def.def * mult),
+    hasAttacked: false,
+    summoningSickness: true,
+  };
+}
 
-// Wave progression
-let wave             = 1;
-let waveTransitioning = false;
+function makeCard(colorId) {
+  const def      = CARD_DEFS[colorId];
+  const colorDef = COLORS.find(c => c.id === colorId);
+  return {
+    id: colorId, colorDef, level: 1,
+    name: def.name, manaCost: def.mana,
+    attack: def.atk, defense: def.def, maxDefense: def.def,
+    ability: def.ability, hasAttacked: false, summoningSickness: true,
+  };
+}
 
-const cooldowns = {};
-let shake = { intensity: 0, duration: 0, elapsed: 0 };
+// ─── TCG state ────────────────────────────────────────────────────────────────
+const MAX_HP    = 20;
+const MAX_MANA  = 10;
+const MAX_SLOTS = 5;
+const MAX_HAND  = 7;
 
-// Score / hit-combo
-let score      = 0;
-let combo      = 0;
-let comboTimer = 0;
-let highScore  = parseInt(localStorage.getItem('colorAttackHigh') || '0');
+let playerHP = MAX_HP, enemyHP = MAX_HP;
+let playerMana = 2,    playerMaxMana = 2;
+let enemyMana  = 2,    enemyMaxMana  = 2;
 
-// Sequence combo tracking
-let lastAttack = null;  // { colorDef, time }
+let playerField = [null, null, null, null, null];
+let enemyField  = [null, null, null, null, null];
+let playerHand  = [];
+let enemyHand   = [];
 
-// Swipe gesture tracking
-let swipeStart = null;  // { x, y, time }
+let currentTurn     = 'player';
+let turnNumber      = 1;
+let phase           = 'play';
+let gameOver        = false;
 
-// Starfield
+let selectedHandIdx  = null;
+let selectedFieldIdx = null;
+let animLock         = false;
+let dragState        = null;  // { card, handIdx, x, y, startX, startY, isDragging, hoverSlot }
+
+// Flash/impact tweens
+let playerFlash  = null;
+let enemyFlash   = null;
+let enemyImpact  = null;
+let playerImpact = null;
+
+// Particles, shake, starfield, audio
+let particles = [];
+let shake     = { intensity: 0, duration: 0, elapsed: 0 };
 const STAR_COUNT = 90;
-const stars = [];
-let bgPulse = 0;
+const stars      = [];
+let bgPulse      = 0;
+let audioCtx     = null;
 
-// Web Audio
-let audioCtx = null;
+// ─── Layout zones ─────────────────────────────────────────────────────────────
+const ZONE = {
+  topHud:      () => ({ y: 0,                        h: canvas.height * 0.07 }),
+  enemyHand:   () => ({ y: canvas.height * 0.07,     h: canvas.height * 0.10 }),
+  enemyField:  () => ({ y: canvas.height * 0.17,     h: canvas.height * 0.28 }),
+  playerField: () => ({ y: canvas.height * 0.50,     h: canvas.height * 0.28 }),
+  playerHand:  () => ({ y: canvas.height * 0.78,     h: canvas.height * 0.14 }),
+  bottomHud:   () => ({ y: canvas.height * 0.92,     h: canvas.height * 0.08 }),
+};
+
+function cardW()      { return Math.min(canvas.width * 0.12, 100 * devicePixelRatio); }
+function cardH()      { return cardW() * 1.45; }
+function fieldCardW() { return Math.min(canvas.width * 0.15, 120 * devicePixelRatio); }
+function fieldCardH() { return fieldCardW() * 1.45; }
+
+// ─── Geometry helpers ─────────────────────────────────────────────────────────
+function fieldSlotRect(side, idx) {
+  const z    = side === 'enemy' ? ZONE.enemyField() : ZONE.playerField();
+  const cw   = fieldCardW();
+  const ch   = fieldCardH();
+  const gap  = cw * 0.18;
+  const totalW = MAX_SLOTS * cw + (MAX_SLOTS - 1) * gap;
+  const startX = (canvas.width - totalW) * 0.5;
+  const x    = startX + idx * (cw + gap);
+  const cy   = z.y + z.h * 0.5;
+  return { x, y: cy - ch * 0.5, w: cw, h: ch, cx: x + cw * 0.5, cy };
+}
+
+// Fan layout helpers — pivot far below hand, cards arc around it
+function handFanParams(total) {
+  const cw     = cardW();
+  const ch     = cardH();
+  const z      = ZONE.playerHand();
+  const maxDeg = Math.min(24, Math.max(6, total * 3.2));
+  const gap    = Math.min(cw * 0.62, (canvas.width * 0.74 - cw) / Math.max(1, total - 1));
+  const totalW = cw + (total - 1) * gap;
+  const startX = (canvas.width - totalW) * 0.5;
+  const pivotDist = ch * 3.0;                          // distance from pivot to card top
+  const pivotY    = z.y + z.h * 0.5 + pivotDist + ch; // pivot below zone
+  return { cw, ch, maxDeg, gap, startX, pivotDist, pivotY };
+}
+
+function handCardAngle(idx, total, params) {
+  if (total <= 1) return 0;
+  const { maxDeg } = params || handFanParams(total);
+  return ((idx - (total - 1) / 2) / (total - 1)) * maxDeg * Math.PI / 180;
+}
+
+// Approximate unrotated rect for legacy use (not used for hit-test anymore)
+function handCardRect(idx, total) {
+  const p   = handFanParams(total);
+  const cx  = p.startX + idx * p.gap + p.cw * 0.5;
+  const a   = handCardAngle(idx, total, p);
+  const lifted = idx === selectedHandIdx ? p.ch * 0.15 : 0;
+  const screenCX = cx + Math.sin(a) * p.pivotDist;
+  const screenCY = p.pivotY - Math.cos(a) * (p.pivotDist + p.ch * 0.5) - lifted;
+  return { x: screenCX - p.cw * 0.5, y: screenCY - p.ch * 0.5, w: p.cw, h: p.ch, cx: screenCX, cy: screenCY };
+}
+
+function hitTestHandCard(px, py, idx, total) {
+  const p  = handFanParams(total);
+  const cx = p.startX + idx * p.gap + p.cw * 0.5;
+  const a  = handCardAngle(idx, total, p);
+  const lifted = idx === selectedHandIdx ? p.ch * 0.15 : 0;
+  // Translate click to pivot-relative coords then un-rotate
+  const dx = px - cx, dy = py - p.pivotY;
+  const cos = Math.cos(-a), sin = Math.sin(-a);
+  const lx = dx * cos - dy * sin;
+  const ly = dx * sin + dy * cos;
+  const cardTop    = -(p.pivotDist + p.ch) - lifted;
+  const cardBottom = -p.pivotDist - lifted;
+  return lx >= -p.cw * 0.5 && lx <= p.cw * 0.5 && ly >= cardTop && ly <= cardBottom + p.ch * 0.18;
+}
+
+function endTurnRect() {
+  const z  = ZONE.bottomHud();
+  const bw = Math.min(canvas.width * 0.22, 130 * devicePixelRatio);
+  const bh = z.h * 0.62;
+  const x  = canvas.width - bw - 16 * devicePixelRatio;
+  const y  = z.y + (z.h - bh) * 0.5;
+  return { x, y, w: bw, h: bh, cx: x + bw * 0.5, cy: y + bh * 0.5 };
+}
+
+function pointIn(px, py, r) {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
+// ─── Deck / draw ──────────────────────────────────────────────────────────────
+function dealCard(target) {
+  const id   = COLOR_IDS[Math.floor(Math.random() * COLOR_IDS.length)];
+  const hand = target === 'player' ? playerHand : enemyHand;
+  if (hand.length >= MAX_HAND) hand.shift();
+  hand.push(makeCard(id));
+}
+
+function dealOpening() {
+  for (let i = 0; i < 4; i++) dealCard('player');
+  for (let i = 0; i < 4; i++) dealCard('enemy');
+}
+
+// ─── Turn management ──────────────────────────────────────────────────────────
+function startPlayerTurn() {
+  currentTurn = 'player'; phase = 'play';
+  playerMaxMana = Math.min(playerMaxMana + 1, MAX_MANA);
+  playerMana    = playerMaxMana;
+  dealCard('player');
+  playerField.forEach(c => { if (c) { c.summoningSickness = false; c.hasAttacked = false; } });
+  playerField.forEach(c => { if (c && c.ability === 'heal') applyHeroHeal('player', 3); });
+  selectedHandIdx = null; selectedFieldIdx = null; animLock = false;
+}
+
+function startEnemyTurn() {
+  currentTurn = 'enemy'; phase = 'enemy'; turnNumber++;
+  enemyMaxMana = Math.min(enemyMaxMana + 1, MAX_MANA);
+  enemyMana    = enemyMaxMana;
+  dealCard('enemy');
+  enemyField.forEach(c => { if (c) { c.summoningSickness = false; c.hasAttacked = false; } });
+  enemyField.forEach(c => { if (c && c.ability === 'heal') applyHeroHeal('enemy', 3); });
+  selectedHandIdx = null; selectedFieldIdx = null;
+  setTimeout(runEnemyAI, 500);
+}
+
+function endPlayerTurn() {
+  if (currentTurn !== 'player' || animLock || gameOver) return;
+  selectedHandIdx = null; selectedFieldIdx = null;
+  setTimeout(startEnemyTurn, 200);
+}
+
+// ─── HP / heal ────────────────────────────────────────────────────────────────
+function applyHeroDamage(target, amount, colorDef) {
+  if (gameOver) return;
+  if (target === 'player') {
+    playerHP = Math.max(0, playerHP - amount);
+    const r = { cx: canvas.width * 0.2, cy: ZONE.playerField().y + ZONE.playerField().h * 0.5, w: 60, h: 60, x: canvas.width * 0.2 - 30, y: 0 };
+    spawnFloatingNumber('-' + amount, r, colorDef.hex, colorDef.glow);
+    triggerShake(5);
+    if (playerHP <= 0) { gameOver = 'lose'; phase = 'gameover'; }
+  } else {
+    enemyHP = Math.max(0, enemyHP - amount);
+    const r = { cx: canvas.width * 0.8, cy: ZONE.enemyField().y + ZONE.enemyField().h * 0.5, w: 60, h: 60, x: canvas.width * 0.8 - 30, y: 0 };
+    spawnFloatingNumber('-' + amount, r, colorDef.hex, colorDef.glow);
+    triggerShake(5);
+    if (enemyHP <= 0) { gameOver = 'win'; phase = 'gameover'; }
+  }
+}
+
+function applyHeroHeal(target, amount) {
+  if (target === 'player') {
+    playerHP = Math.min(MAX_HP, playerHP + amount);
+    const r = { cx: canvas.width * 0.2, cy: ZONE.playerField().y + 30, w: 40, h: 40, x: 0, y: 0 };
+    spawnFloatingNumber('+' + amount, r, '#22DD55', '#88ffaa');
+  } else {
+    enemyHP = Math.min(MAX_HP, enemyHP + amount);
+  }
+}
+
+// ─── Card combat ──────────────────────────────────────────────────────────────
+function resolveAttack(atkIsPlayer, atkIdx, targetIsHero, tgtIdx) {
+  if (animLock || gameOver) return;
+  const atkField = atkIsPlayer ? playerField : enemyField;
+  const defField = atkIsPlayer ? enemyField  : playerField;
+  const attacker = atkField[atkIdx];
+  if (!attacker) return;
+
+  // Taunt enforcement
+  if (!targetIsHero) {
+    const hasTaunt = defField.some(c => c && c.ability === 'taunt');
+    if (hasTaunt && defField[tgtIdx] && defField[tgtIdx].ability !== 'taunt') return;
+  }
+
+  attacker.hasAttacked = true;
+  animLock = true;
+  bgPulse  = 0.7;
+  playSound(attacker.id);
+
+  const src = fieldSlotRect(atkIsPlayer ? 'player' : 'enemy', atkIdx);
+  const dst = targetIsHero
+    ? { cx: atkIsPlayer ? canvas.width * 0.75 : canvas.width * 0.25, cy: atkIsPlayer ? ZONE.topHud().y + ZONE.topHud().h * 0.5 : ZONE.bottomHud().y + ZONE.bottomHud().h * 0.5, w: 50, h: 50, x: 0, y: 0 }
+    : fieldSlotRect(atkIsPlayer ? 'enemy' : 'player', tgtIdx);
+
+  if (atkIsPlayer) playerFlash = { color: attacker.colorDef, t: 0 };
+  else             enemyFlash  = { color: attacker.colorDef, t: 0 };
+
+  setTimeout(() => _dispatchBeamAt(attacker.colorDef, src, dst), 120);
+
+  setTimeout(() => {
+    if (targetIsHero) {
+      applyHeroDamage(atkIsPlayer ? 'enemy' : 'player', attacker.attack, attacker.colorDef);
+      if (atkIsPlayer) enemyImpact  = { color: attacker.colorDef, t: 0 };
+      else             playerImpact = { color: attacker.colorDef, t: 0 };
+    } else {
+      const defender = defField[tgtIdx];
+      if (!defender) { animLock = false; return; }
+      const atkRect = fieldSlotRect(atkIsPlayer ? 'player' : 'enemy', atkIdx);
+      const defRect = fieldSlotRect(atkIsPlayer ? 'enemy' : 'player', tgtIdx);
+      if (attacker.attack > 0) {
+        defender.defense -= attacker.attack;
+        spawnFloatingNumber('-' + attacker.attack, defRect, attacker.colorDef.hex, attacker.colorDef.glow);
+      }
+      if (defender.attack > 0) {
+        attacker.defense -= defender.attack;
+        spawnFloatingNumber('-' + defender.attack, atkRect, defender.colorDef.hex, defender.colorDef.glow);
+      }
+      _dispatchImpactAt(attacker.colorDef, defRect);
+      triggerShake(attacker.attack >= 3 ? 7 : 3);
+      if (defender.defense <= 0) setTimeout(() => killCard(defField, tgtIdx, defRect), 250);
+      if (attacker.defense <= 0) setTimeout(() => killCard(atkField, atkIdx, atkRect), 250);
+    }
+    setTimeout(() => { animLock = false; }, 400);
+  }, 620);
+}
+
+function killCard(field, idx, rect) {
+  const card = field[idx];
+  if (!card) return;
+  for (let i = 0; i < 18; i++) {
+    const angle = (i / 18) * Math.PI * 2;
+    const speed = rand(3, 8) * devicePixelRatio;
+    particles.push({ type: 'spark', color: card.colorDef.hex, glow: card.colorDef.glow,
+      x: rect.cx, y: rect.cy, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      size: rand(3, 7), life: 1, alpha: 1 });
+  }
+  particles.push({ type: 'ring', color: card.colorDef.hex, glow: card.colorDef.glow,
+    x: rect.cx, y: rect.cy, radius: 0, maxRadius: rect.w * 0.9, life: 1, alpha: 1, speed: 0.03 });
+  field[idx] = null;
+}
+
+// ─── Merge system ─────────────────────────────────────────────────────────────
+function spawnMergeBurst(srcRect, dstRect, colorDef) {
+  for (let i = 0; i < 22; i++) {
+    const angle = (i / 22) * Math.PI * 2;
+    const dist  = rand(50, 110) * devicePixelRatio;
+    particles.push({
+      type: 'implode', color: '#FFD700', glow: '#ffe87a',
+      x: dstRect.cx + Math.cos(angle) * dist,
+      y: dstRect.cy + Math.sin(angle) * dist,
+      tx: dstRect.cx, ty: dstRect.cy,
+      size: rand(7, 16), life: 1, alpha: 1, phase: 'in',
+    });
+  }
+  particles.push({ type: 'ring', color: '#FFD700', glow: '#ffe87a',
+    x: dstRect.cx, y: dstRect.cy,
+    radius: 0, maxRadius: dstRect.w * 1.8, life: 1, alpha: 1, speed: 0.022 });
+  for (let i = 0; i < 28; i++) {
+    const angle = (i / 28) * Math.PI * 2;
+    const speed = rand(5, 13) * devicePixelRatio;
+    particles.push({ type: 'spark', color: colorDef.hex, glow: colorDef.glow,
+      x: dstRect.cx, y: dstRect.cy,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      size: rand(4, 9), life: 1, alpha: 1 });
+  }
+  particles.push({ type: 'ring', color: '#ffffff', glow: '#ffffff',
+    x: dstRect.cx, y: dstRect.cy,
+    radius: 0, maxRadius: dstRect.w * 0.9, life: 1, alpha: 0.9, speed: 0.04 });
+}
+
+function mergeCards(keepIdx, removeIdx) {
+  if (animLock || gameOver) return;
+  const keep   = playerField[keepIdx];
+  const remove = playerField[removeIdx];
+  if (!keep || !remove || keep.id !== remove.id || keep.level >= MAX_LEVEL) return;
+  const merged = getMergedCard(keep);
+  animLock = true; bgPulse = 0.9;
+  const keepR   = fieldSlotRect('player', keepIdx);
+  const removeR = fieldSlotRect('player', removeIdx);
+  spawnMergeBurst(removeR, keepR, keep.colorDef);
+  playSound(keep.id);
+  setTimeout(() => {
+    playerField[removeIdx] = null;
+    playerField[keepIdx]   = merged;
+    selectedFieldIdx = null;
+    spawnFloatingNumber('LVL ' + merged.level + '!', keepR, '#FFD700', '#ffe87a');
+    triggerShake(4);
+    setTimeout(() => { animLock = false; }, 200);
+  }, 420);
+}
+
+function mergeFromHand(handIdx, fieldIdx) {
+  if (animLock || gameOver) return;
+  const handCard  = playerHand[handIdx];
+  const fieldCard = playerField[fieldIdx];
+  if (!handCard || !fieldCard || handCard.id !== fieldCard.id || fieldCard.level >= MAX_LEVEL) return;
+  const merged = getMergedCard(fieldCard);
+  animLock = true; bgPulse = 0.9;
+  const fieldR = fieldSlotRect('player', fieldIdx);
+  spawnMergeBurst(fieldR, fieldR, fieldCard.colorDef);
+  playSound(fieldCard.id);
+  setTimeout(() => {
+    playerHand.splice(handIdx, 1);
+    playerField[fieldIdx] = merged;
+    selectedHandIdx = null;
+    spawnFloatingNumber('LVL ' + merged.level + '!', fieldR, '#FFD700', '#ffe87a');
+    triggerShake(4);
+    setTimeout(() => { animLock = false; }, 200);
+  }, 420);
+}
+
+// ─── Enemy merge helpers ──────────────────────────────────────────────────────
+function mergeEnemyCards(keepIdx, removeIdx) {
+  if (gameOver) return;
+  const keep   = enemyField[keepIdx];
+  const remove = enemyField[removeIdx];
+  if (!keep || !remove || keep.id !== remove.id || keep.level >= MAX_LEVEL) return;
+  const merged = getMergedCard(keep);
+  bgPulse = 0.7;
+  const keepR   = fieldSlotRect('enemy', keepIdx);
+  const removeR = fieldSlotRect('enemy', removeIdx);
+  spawnMergeBurst(removeR, keepR, keep.colorDef);
+  playSound(keep.id);
+  setTimeout(() => {
+    enemyField[removeIdx] = null;
+    enemyField[keepIdx]   = merged;
+    spawnFloatingNumber('LVL ' + merged.level + '!', keepR, '#FF6666', '#ff9999');
+    triggerShake(3);
+  }, 420);
+}
+
+function mergeEnemyFromHand(handCard, fieldIdx) {
+  if (gameOver) return;
+  const fieldCard = enemyField[fieldIdx];
+  if (!handCard || !fieldCard || handCard.id !== fieldCard.id || fieldCard.level >= MAX_LEVEL) return;
+  const merged = getMergedCard(fieldCard);
+  bgPulse = 0.7;
+  const fieldR = fieldSlotRect('enemy', fieldIdx);
+  const hIdx   = enemyHand.indexOf(handCard);
+  if (hIdx === -1) return;
+  spawnMergeBurst(fieldR, fieldR, fieldCard.colorDef);
+  playSound(fieldCard.id);
+  setTimeout(() => {
+    const currentIdx = enemyHand.indexOf(handCard);
+    if (currentIdx !== -1) enemyHand.splice(currentIdx, 1);
+    enemyField[fieldIdx] = merged;
+    spawnFloatingNumber('LVL ' + merged.level + '!', fieldR, '#FF6666', '#ff9999');
+    triggerShake(3);
+  }, 420);
+}
+
+// ─── Enemy AI ─────────────────────────────────────────────────────────────────
+function runEnemyAI() {
+  if (gameOver) return;
+  let delay = 100;
+
+  // ── Step 1: Field-to-field merges (free power spike) ──────────────────────
+  // Snapshot which field slots share the same color
+  const fieldMerges = [];
+  for (let i = 0; i < MAX_SLOTS; i++) {
+    for (let j = i + 1; j < MAX_SLOTS; j++) {
+      const a = enemyField[i], b = enemyField[j];
+      if (a && b && a.id === b.id && a.level < MAX_LEVEL) {
+        // merge the lower-level one into the higher (or first if equal)
+        const keepIdx   = a.level >= b.level ? i : j;
+        const removeIdx = keepIdx === i ? j : i;
+        fieldMerges.push({ keepIdx, removeIdx });
+        break; // one merge per slot per turn
+      }
+    }
+    if (fieldMerges.length >= 2) break; // cap at 2 merges/turn to keep pace
+  }
+  for (const { keepIdx, removeIdx } of fieldMerges) {
+    const k = keepIdx, r = removeIdx;
+    setTimeout(() => { if (!gameOver) mergeEnemyCards(k, r); }, delay);
+    delay += 800;
+  }
+
+  // ── Step 2: Hand-to-field merges (upgrade before playing new cards) ────────
+  // Only do this if the AI has a card in hand matching a field card
+  const usedFieldSlots = new Set();
+  const handMerges = [];
+  for (const handCard of [...enemyHand]) {
+    for (let fi = 0; fi < MAX_SLOTS; fi++) {
+      if (usedFieldSlots.has(fi)) continue;
+      const fc = enemyField[fi];
+      if (fc && fc.id === handCard.id && fc.level < MAX_LEVEL) {
+        handMerges.push({ handCard, fi });
+        usedFieldSlots.add(fi);
+        break;
+      }
+    }
+    if (handMerges.length >= 2) break; // cap at 2 hand-merges/turn
+  }
+  for (const { handCard, fi } of handMerges) {
+    const capturedCard = handCard, capturedFi = fi;
+    setTimeout(() => { if (!gameOver) mergeEnemyFromHand(capturedCard, capturedFi); }, delay);
+    delay += 800;
+  }
+
+  // ── Step 3: Play affordable cards (cheapest first) ────────────────────────
+  delay += 200;
+  const playable = enemyHand
+    .map((c, i) => ({ card: c, i }))
+    .filter(x => x.card && x.card.manaCost <= enemyMana)
+    .sort((a, b) => a.card.manaCost - b.card.manaCost);
+
+  for (const { card } of playable) {
+    const slot = enemyField.findIndex(s => s === null);
+    if (slot === -1) break;
+    setTimeout(() => {
+      if (gameOver) return;
+      const hIdx = enemyHand.indexOf(card);
+      if (hIdx === -1 || enemyMana < card.manaCost || enemyField[slot] !== null) return;
+      enemyMana -= card.manaCost;
+      card.summoningSickness = card.ability !== 'charge';
+      enemyField[slot] = card;
+      enemyHand.splice(hIdx, 1);
+      playSound(card.id);
+      bgPulse = 0.35;
+    }, delay);
+    delay += 700;
+  }
+
+  // ── Step 4: Attack with each field card ───────────────────────────────────
+  delay += 300;
+  for (let idx = 0; idx < MAX_SLOTS; idx++) {
+    const capturedIdx = idx;
+    setTimeout(() => {
+      if (gameOver) return;
+      const card = enemyField[capturedIdx];
+      if (!card || card.hasAttacked || card.summoningSickness || card.attack === 0) return;
+
+      const tauntIdx = playerField.findIndex(c => c && c.ability === 'taunt');
+      if (tauntIdx !== -1) {
+        resolveAttack(false, capturedIdx, false, tauntIdx);
+        return;
+      }
+      const targets = playerField.map((c, i) => c ? i : -1).filter(i => i !== -1);
+      // Prefer attacking high-value player cards; fallback to hero
+      if (targets.length > 0 && Math.random() < 0.55) {
+        resolveAttack(false, capturedIdx, false, targets[Math.floor(Math.random() * targets.length)]);
+      } else {
+        resolveAttack(false, capturedIdx, true, -1);
+      }
+    }, delay);
+    delay += 950;
+  }
+
+  setTimeout(() => { if (!gameOver) startPlayerTurn(); }, delay + 400);
+}
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+function getEventPos(e) {
+  const r = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / r.width;
+  const scaleY = canvas.height / r.height;
+  const src = (e.changedTouches && e.changedTouches.length > 0) ? e.changedTouches[0]
+            : (e.touches && e.touches.length > 0) ? e.touches[0]
+            : e;
+  return { x: (src.clientX - r.left) * scaleX, y: (src.clientY - r.top) * scaleY };
+}
+
+function handleClickLogic(pos) {
+  if (gameOver) { resetGame(); return; }
+  if (phase === 'enemy') return;
+
+  if (pointIn(pos.x, pos.y, endTurnRect())) { endPlayerTurn(); return; }
+
+  for (let i = 0; i < MAX_SLOTS; i++) {
+    const r = fieldSlotRect('player', i);
+    if (pointIn(pos.x, pos.y, r)) {
+      if (selectedHandIdx !== null) {
+        const card = playerHand[selectedHandIdx];
+        // Hand→field merge: same color, field card exists and not max level
+        if (playerField[i] !== null && playerField[i].id === card.id && playerField[i].level < MAX_LEVEL) {
+          mergeFromHand(selectedHandIdx, i); return;
+        }
+        if (playerField[i] !== null || playerMana < card.manaCost) { selectedHandIdx = null; return; }
+        playerMana -= card.manaCost;
+        card.summoningSickness = card.ability !== 'charge';
+        playerField[i] = card;
+        playerHand.splice(selectedHandIdx, 1);
+        selectedHandIdx = null;
+        playSound(card.id); bgPulse = 0.5;
+        return;
+      }
+      const card = playerField[i];
+      // Field→field merge: selected card + clicked same-color card
+      if (selectedFieldIdx !== null && selectedFieldIdx !== i && card) {
+        const selCard = playerField[selectedFieldIdx];
+        if (selCard && selCard.id === card.id && card.level < MAX_LEVEL) {
+          mergeCards(i, selectedFieldIdx); return;
+        }
+      }
+      if (card && !card.hasAttacked && !card.summoningSickness) {
+        selectedFieldIdx = selectedFieldIdx === i ? null : i;
+        selectedHandIdx  = null;
+      } else {
+        selectedFieldIdx = null;
+      }
+      return;
+    }
+  }
+
+  if (selectedFieldIdx !== null) {
+    for (let i = 0; i < MAX_SLOTS; i++) {
+      const r = fieldSlotRect('enemy', i);
+      if (pointIn(pos.x, pos.y, r) && enemyField[i]) {
+        resolveAttack(true, selectedFieldIdx, false, i);
+        selectedFieldIdx = null;
+        return;
+      }
+    }
+    const tZ = ZONE.topHud();
+    if (pos.y >= tZ.y && pos.y <= tZ.y + tZ.h) {
+      if (!enemyField.some(c => c && c.ability === 'taunt')) {
+        resolveAttack(true, selectedFieldIdx, true, -1);
+        selectedFieldIdx = null;
+      }
+      return;
+    }
+    selectedFieldIdx = null;
+  }
+}
+
+function onPointerDown(e) {
+  e.preventDefault();
+  if (gameOver) { resetGame(); return; }
+  const pos = getEventPos(e);
+  const hn  = playerHand.length;
+  for (let i = hn - 1; i >= 0; i--) {
+    if (hitTestHandCard(pos.x, pos.y, i, hn)) {
+      dragState = { card: playerHand[i], handIdx: i, x: pos.x, y: pos.y, startX: pos.x, startY: pos.y, isDragging: false, hoverSlot: -1 };
+      return;
+    }
+  }
+  handleClickLogic(pos);
+}
+
+function onPointerMove(e) {
+  if (!dragState) return;
+  e.preventDefault();
+  const pos = getEventPos(e);
+  dragState.x = pos.x; dragState.y = pos.y;
+  const dx = pos.x - dragState.startX, dy = pos.y - dragState.startY;
+  if (!dragState.isDragging && (Math.abs(dx) > 8 * devicePixelRatio || Math.abs(dy) > 8 * devicePixelRatio)) {
+    dragState.isDragging = true;
+    selectedHandIdx = null;
+  }
+  if (dragState.isDragging) {
+    dragState.hoverSlot = -1;
+    for (let i = 0; i < MAX_SLOTS; i++) {
+      const r = fieldSlotRect('player', i);
+      if (pointIn(pos.x, pos.y, r)) { dragState.hoverSlot = i; break; }
+    }
+  }
+}
+
+function onPointerUp(e) {
+  if (!dragState) return;
+  e.preventDefault();
+  const pos = getEventPos(e);
+  if (!dragState.isDragging) {
+    selectedFieldIdx = null;
+    selectedHandIdx  = selectedHandIdx === dragState.handIdx ? null : dragState.handIdx;
+    dragState = null;
+    return;
+  }
+  // Check release position directly — more reliable than last mousemove hoverSlot
+  let slot = -1;
+  for (let i = 0; i < MAX_SLOTS; i++) {
+    const r = fieldSlotRect('player', i);
+    if (pointIn(pos.x, pos.y, r)) { slot = i; break; }
+  }
+  if (slot === -1) slot = dragState.hoverSlot; // fallback to last known hover
+  const card = dragState.card;
+  if (slot !== -1 && phase !== 'enemy') {
+    const existing = playerField[slot];
+    if (existing && existing.id === card.id && existing.level < MAX_LEVEL) {
+      // Drag→field merge
+      mergeFromHand(dragState.handIdx, slot);
+      dragState = null; return;
+    } else if (!existing && playerMana >= card.manaCost) {
+      playerMana -= card.manaCost;
+      card.summoningSickness = card.ability !== 'charge';
+      playerField[slot] = card;
+      playerHand.splice(dragState.handIdx, 1);
+      selectedHandIdx = null;
+      playSound(card.id); bgPulse = 0.5;
+    }
+  }
+  dragState = null;
+}
+
+canvas.addEventListener('mousedown',  onPointerDown);
+canvas.addEventListener('mousemove',  onPointerMove);
+canvas.addEventListener('mouseup',    onPointerUp);
+canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+canvas.addEventListener('touchmove',  onPointerMove, { passive: false });
+canvas.addEventListener('touchend',   onPointerUp,   { passive: false });
+
+// ─── Reset / init ─────────────────────────────────────────────────────────────
+function resetGame() {
+  playerHP = MAX_HP; enemyHP = MAX_HP;
+  playerMana = 2; playerMaxMana = 2;
+  enemyMana  = 2; enemyMaxMana  = 2;
+  playerField = [null, null, null, null, null];
+  enemyField  = [null, null, null, null, null];
+  playerHand  = []; enemyHand = [];
+  currentTurn = 'player'; turnNumber = 1; phase = 'play'; gameOver = false;
+  selectedHandIdx = null; selectedFieldIdx = null; animLock = false;
+  particles = [];
+  playerFlash = null; enemyFlash = null; enemyImpact = null; playerImpact = null;
+  shake = { intensity: 0, duration: 0, elapsed: 0 }; bgPulse = 0; dragState = null;
+  dealOpening();
+  // Give player first turn mana immediately
+  playerMaxMana = 2; playerMana = 2;
+}
+
+// ─── Canvas resize ────────────────────────────────────────────────────────────
+function resize() {
+  canvas.width  = canvas.clientWidth  * devicePixelRatio;
+  canvas.height = canvas.clientHeight * devicePixelRatio;
+  initStars();
+}
+window.addEventListener('resize', resize);
+resize();
 
 // ─── Audio ────────────────────────────────────────────────────────────────────
 function getAudio() {
@@ -102,7 +736,6 @@ function playSound(colorId) {
   try {
     const ac = getAudio();
     const now = ac.currentTime;
-
     switch (colorId) {
       case 'yellow': {
         const g = ac.createGain();
@@ -133,8 +766,7 @@ function playSound(colorId) {
         const buf = ac.createBuffer(1, bufLen, ac.sampleRate);
         const data = buf.getChannelData(0);
         for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
-        const src = ac.createBufferSource();
-        src.buffer = buf;
+        const src = ac.createBufferSource(); src.buffer = buf;
         const filter = ac.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(300, now);
@@ -165,18 +797,8 @@ function playSound(colorId) {
         g.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
         g.connect(ac.destination);
         const o = ac.createOscillator();
-        o.type = 'sine';
-        o.frequency.setValueAtTime(1047, now);
+        o.type = 'sine'; o.frequency.setValueAtTime(1047, now);
         o.connect(g); o.start(now); o.stop(now + 0.5);
-        const g2 = ac.createGain();
-        g2.gain.setValueAtTime(0.001, now);
-        g2.gain.linearRampToValueAtTime(0.08, now + 0.02);
-        g2.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-        g2.connect(ac.destination);
-        const o2 = ac.createOscillator();
-        o2.type = 'sine';
-        o2.frequency.setValueAtTime(2093, now);
-        o2.connect(g2); o2.start(now); o2.stop(now + 0.3);
         break;
       }
       case 'green': {
@@ -187,14 +809,13 @@ function playSound(colorId) {
           g.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
           g.connect(ac.destination);
           const o = ac.createOscillator();
-          o.type = 'sine';
-          o.frequency.setValueAtTime(freq, now);
+          o.type = 'sine'; o.frequency.setValueAtTime(freq, now);
           o.connect(g); o.start(now); o.stop(now + 0.85);
         });
         break;
       }
     }
-  } catch (_) { /* audio blocked — ignore */ }
+  } catch (_) { /* audio blocked */ }
 }
 
 // ─── Starfield ────────────────────────────────────────────────────────────────
@@ -204,10 +825,9 @@ function initStars() {
   for (let i = 0; i < STAR_COUNT; i++) {
     const layer = i % 3;
     stars.push({
-      nx:      Math.random(),
-      ny:      Math.random(),
-      size:    Math.random() * 1.2 + 0.4,
-      speed:   (Math.random() * 0.04 + 0.01) * layerSpeeds[layer],
+      nx: Math.random(), ny: Math.random(),
+      size: Math.random() * 1.2 + 0.4,
+      speed: (Math.random() * 0.04 + 0.01) * layerSpeeds[layer],
       opacity: Math.random() * 0.45 + 0.12,
       layer,
     });
@@ -229,362 +849,113 @@ function drawStars() {
     ctx.globalAlpha = Math.min(1, s.opacity + bgPulse * 0.35);
     ctx.fillStyle = layerColors[s.layer];
     ctx.beginPath();
-    ctx.arc(s.nx * canvas.width, s.ny * canvas.height,
-            s.size * devicePixelRatio, 0, Math.PI * 2);
+    ctx.arc(s.nx * canvas.width, s.ny * canvas.height, s.size * devicePixelRatio, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 }
 
-// ─── Canvas resize ───────────────────────────────────────────────────────────
-function resize() {
-  canvas.width  = canvas.clientWidth  * devicePixelRatio;
-  canvas.height = canvas.clientHeight * devicePixelRatio;
-  buildButtons();
-  initStars();
-}
-
-window.addEventListener('resize', resize);
-resize();
-
-// ─── Button layout ───────────────────────────────────────────────────────────
-function buildButtons() {
-  const bSize   = BUTTON_SIZE();
-  const bottomY = HALF() + (HALF() - bSize) * 0.5;
-  const totalW  = COLORS.length * bSize + (COLORS.length - 1) * bSize * 0.35;
-  const startX  = (canvas.width - totalW) * 0.5;
-  const step    = bSize + bSize * 0.35;
-
-  buttons = COLORS.map((c, i) => ({
-    ...c,
-    x: startX + i * step,
-    y: bottomY,
-    w: bSize,
-    h: bSize,
-  }));
-}
-
-// ─── Input handling (mouse + touch) ──────────────────────────────────────────
-function getEventPos(e) {
-  const r = canvas.getBoundingClientRect();
-  const scaleX = canvas.width  / r.width;
-  const scaleY = canvas.height / r.height;
-  const src = e.touches ? e.touches[0] : e;
-  return {
-    x: (src.clientX - r.left) * scaleX,
-    y: (src.clientY - r.top)  * scaleY,
-  };
-}
-
-function handleInput(e) {
-  e.preventDefault();
-  if (gameOver) { resetGame(); return; }
-  if (busy || waveTransitioning) return;
-  const pos = getEventPos(e);
-  for (const btn of buttons) {
-    if (pos.x >= btn.x && pos.x <= btn.x + btn.w &&
-        pos.y >= btn.y && pos.y <= btn.y + btn.h) {
-      const cd = cooldowns[btn.id];
-      if (cd && cd.remaining > 0) return;
-      triggerColor(btn);
-      return;
-    }
-  }
-}
-
-canvas.addEventListener('click',      handleInput);
-canvas.addEventListener('touchstart', handleInput, { passive: false });
-
-// Swipe gesture — touchstart records position, touchend evaluates direction
-canvas.addEventListener('touchstart', e => {
-  const pos = getEventPos(e);
-  swipeStart = { x: pos.x, y: pos.y, time: performance.now() };
-}, { passive: true });
-
-canvas.addEventListener('touchend', e => {
-  if (!swipeStart) return;
-  const r      = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / r.width;
-  const scaleY = canvas.height / r.height;
-  const touch  = e.changedTouches[0];
-  if (!touch) { swipeStart = null; return; }
-  const endX    = (touch.clientX - r.left) * scaleX;
-  const endY    = (touch.clientY - r.top)  * scaleY;
-  const dx      = endX - swipeStart.x;
-  const dy      = endY - swipeStart.y;
-  const dist    = Math.hypot(dx, dy);
-  const elapsed = performance.now() - swipeStart.time;
-  swipeStart = null;
-  if (dist < 45 || elapsed > 600) return; // too short/slow = tap, not swipe
-  if (gameOver) { resetGame(); return; }
-  if (busy || waveTransitioning) return;
-  const color = resolveSwipeColor(dx, dy);
-  if (color) {
-    const cd = cooldowns[color.id];
-    if (cd && cd.remaining > 0) return;
-    triggerColor(color);
-  }
-}, { passive: true });
-
-function resolveSwipeColor(dx, dy) {
-  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-  // right=0°, down=90°, left=±180°, up=-90°
-  if (angle > -135 && angle <= -45)  return COLORS.find(c => c.id === 'red');    // swipe up
-  if (angle > -45  && angle <= 45)   return COLORS.find(c => c.id === 'blue');   // swipe right
-  if (angle > 45   && angle <= 135)  return COLORS.find(c => c.id === 'green');  // swipe down
-  return COLORS.find(c => c.id === 'yellow');                                      // swipe left
-}
-
-// ─── Game state helpers ───────────────────────────────────────────────────────
-function waveMaxHP() { return MAX_HP + (wave - 1) * 25; }
-
-function resetGame() {
-  playerHP         = MAX_HP;
-  enemyHP          = MAX_HP;
-  gameOver         = false;
-  busy             = false;
-  wave             = 1;
-  waveTransitioning = false;
-  lastAttack       = null;
-  swipeStart       = null;
-  score            = 0;
-  combo            = 0;
-  comboTimer       = 0;
-  particles        = [];
-  playerFlash      = null;
-  enemyFlash       = null;
-  enemyImpact      = null;
-  playerImpact     = null;
-  shake            = { intensity: 0, duration: 0, elapsed: 0 };
-  bgPulse          = 0;
-  for (const id in cooldowns) cooldowns[id].remaining = 0;
-}
-
-function applyDamage(amount, colorDef) {
-  if (gameOver) return;
-
-  // Hit-combo multiplier
-  combo = comboTimer > 0 ? combo + 1 : 1;
-  comboTimer = COMBO_WINDOW;
-  const multiplier = 1 + (combo - 1) * 0.15;
-  const actual = Math.round(amount * multiplier);
-
-  enemyHP = Math.max(0, enemyHP - actual);
-  score  += actual;
-  if (score > highScore) {
-    highScore = score;
-    localStorage.setItem('colorAttackHigh', highScore);
-  }
-
-  spawnFloatingNumber('-' + actual, enemyRect(), colorDef.hex, colorDef.glow);
-  if (combo >= 2) spawnComboIndicator(combo, colorDef);
-  triggerShake(colorDef.shakeAmt);
-
-  if (enemyHP <= 0) {
-    // Wave cleared — transition to next wave
-    wave++;
-    waveTransitioning = true;
-    spawnWaveTransition();
-    setTimeout(startNextWave, 1800);
-    return;
-  }
-
-  // Schedule enemy counter-attack — delay shortens with each wave
-  const baseDelay = Math.max(600, 1000 - wave * 50);
-  const delay = baseDelay + Math.random() * 600;
-  setTimeout(enemyCounterAttack, delay);
-}
-
-function applyPlayerDamage(amount, colorDef) {
-  if (gameOver) return;
-  playerHP = Math.max(0, playerHP - amount);
-  spawnFloatingNumber('-' + amount, playerRect(), colorDef.hex, colorDef.glow);
-  triggerShake(colorDef.shakeAmt * 0.7);
-  if (playerHP <= 0) { gameOver = 'enemy'; }
-}
-
-function applyHeal(amount) {
-  if (gameOver) return;
-  playerHP = Math.min(MAX_HP, playerHP + amount);
-  spawnFloatingNumber('+' + amount, playerRect(), '#22DD55', '#88ffaa');
-}
-
 // ─── Screen shake ─────────────────────────────────────────────────────────────
 function triggerShake(intensity) {
   shake.intensity = intensity * devicePixelRatio;
-  shake.duration  = 320;
+  shake.duration  = 280;
   shake.elapsed   = 0;
 }
 
-// ─── Wave transition ──────────────────────────────────────────────────────────
-function spawnWaveTransition() {
-  const e = enemyRect();
-  triggerShake(12);
-  // Big "WAVE N" label centered in arena
-  particles.push({
-    type: 'floatNum',
-    text: 'WAVE ' + wave,
-    color: '#FFD700',
-    glow: '#fffacc',
-    x: canvas.width * 0.5,
-    y: HALF() * 0.44,
-    life: 1, alpha: 1,
-    fontSize: Math.max(36 * devicePixelRatio, e.w * 0.52),
-  });
-  // Burst of gold sparks at enemy position
-  for (let i = 0; i < 30; i++) {
-    const angle = (i / 30) * Math.PI * 2;
-    const speed = rand(3, 8) * devicePixelRatio;
-    particles.push({ type: 'spark', color: '#FFD700', glow: '#fffacc',
-      x: e.cx, y: e.cy, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-      size: rand(3, 8), life: 1, alpha: 1 });
-  }
-  particles.push({ type: 'ring', color: '#FFD700', glow: '#fffacc',
-    x: e.cx, y: e.cy, radius: 0, maxRadius: e.w * 1.5,
-    life: 1, alpha: 1, speed: 0.025 });
-}
-
-function startNextWave() {
-  enemyHP          = waveMaxHP();
-  enemyFlash       = null;
-  playerImpact     = null;
-  waveTransitioning = false;
-  busy             = false;
-}
-
-// ─── Main sequence dispatcher ─────────────────────────────────────────────────
-function triggerColor(colorDef) {
-  // Check for two-color sequence combo BEFORE committing to normal attack
-  const now = performance.now();
-  if (lastAttack && (now - lastAttack.time) < COMBO_SEQ_WINDOW
-      && lastAttack.colorDef.id !== colorDef.id) {
-    const pair = findComboPair(lastAttack.colorDef, colorDef);
-    if (pair) {
-      lastAttack = null;
-      triggerComboAttack(pair);
-      return;
-    }
-  }
-  lastAttack = { colorDef, time: now };
-
-  busy    = true;
-  bgPulse = 1;
-  cooldowns[colorDef.id] = { remaining: colorDef.cooldown, total: colorDef.cooldown };
-  playSound(colorDef.id);
-
-  if (colorDef.id === 'green') {
-    spawnHeal();
-    applyHeal(colorDef.heal);
-    setTimeout(() => { busy = false; }, 1200);
-    return;
-  }
-
-  playerFlash = { color: colorDef, t: 0 };
-  setTimeout(() => spawnBeam(colorDef), 200);
-  setTimeout(() => {
-    enemyImpact = { color: colorDef, t: 0 };
-    applyDamage(colorDef.damage, colorDef);
-    setTimeout(() => { if (!gameOver && !waveTransitioning) busy = false; }, 900);
-  }, 700);
-}
-
-// ─── Two-color sequence combos ────────────────────────────────────────────────
-function findComboPair(a, b) {
-  return COMBO_PAIRS.find(p =>
-    (p.ids[0] === a.id && p.ids[1] === b.id) ||
-    (p.ids[0] === b.id && p.ids[1] === a.id)
-  ) || null;
-}
-
-function triggerComboAttack(pair) {
-  busy    = true;
-  bgPulse = 1;
-  // Both involved colors go on a 1.5× cooldown
-  [pair.beamColor, pair.impactColor].forEach(c => {
-    cooldowns[c.id] = { remaining: c.cooldown * 1.5, total: c.cooldown * 1.5 };
-  });
-  playSound(pair.beamColor.id);
-  setTimeout(() => playSound(pair.impactColor.id), 180);
-  spawnComboLabel(pair.name);
-  playerFlash = { color: pair.beamColor, t: 0 };
-  setTimeout(() => {
-    _dispatchBeam(pair.beamColor, playerRect(), enemyRect());
-    setTimeout(() => _dispatchBeam(pair.impactColor, playerRect(), enemyRect()), 160);
-  }, 200);
-  setTimeout(() => {
-    enemyImpact = { color: pair.impactColor, t: 0 };
-    applyDamage(pair.damage, { ...pair.beamColor, shakeAmt: pair.shakeAmt });
-    if (pair.healAmount) applyHeal(pair.healAmount);
-    setTimeout(() => { if (!gameOver && !waveTransitioning) busy = false; }, 900);
-  }, 700);
-}
-
-function spawnComboLabel(name) {
-  const e = enemyRect();
-  particles.push({
-    type: 'floatNum',
-    text: name + '!',
-    color: '#FFD700',
-    glow: '#fffaaa',
-    x: canvas.width * 0.5,
-    y: HALF() * 0.38,
-    life: 1, alpha: 1,
-    fontSize: Math.max(20 * devicePixelRatio, e.w * 0.3),
-  });
-}
-
-// ─── Enemy counter-attack ─────────────────────────────────────────────────────
-function enemyCounterAttack() {
-  if (gameOver || waveTransitioning) return;
-  const colorDef = ATTACK_COLORS[Math.floor(Math.random() * ATTACK_COLORS.length)];
-  bgPulse = 0.6;
-  playSound(colorDef.id);
-  enemyFlash = { color: colorDef, t: 0 };
-  setTimeout(() => spawnBeamReversed(colorDef), 200);
-  setTimeout(() => {
-    playerImpact = { color: colorDef, t: 0 };
-    applyPlayerDamage(colorDef.damage, colorDef);
-  }, 700);
-}
-
-// ─── Player / Enemy square geometry helpers ───────────────────────────────────
-function playerRect() {
-  const s   = SQUARE_SIZE();
-  const cx  = canvas.width * 0.5;
-  const cy  = HALF() * 0.5;
-  const gap = s * 0.25;
-  return { x: cx - gap - s, y: cy - s * 0.5, w: s, h: s, cx: cx - gap - s * 0.5, cy };
-}
-
-function enemyRect() {
-  const s   = SQUARE_SIZE();
-  const cx  = canvas.width * 0.5;
-  const cy  = HALF() * 0.5;
-  const gap = s * 0.25;
-  return { x: cx + gap, y: cy - s * 0.5, w: s, h: s, cx: cx + gap + s * 0.5, cy };
-}
-
-// ─── Beam spawners ────────────────────────────────────────────────────────────
+// ─── Draw helpers ─────────────────────────────────────────────────────────────
 function rand(min, max)    { return min + Math.random() * (max - min); }
 function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
 
-function spawnBeam(colorDef) {
-  const p = playerRect(), e = enemyRect();
-  _dispatchBeam(colorDef, p, e);
+function setGlow(color, blur)  { ctx.shadowColor = color; ctx.shadowBlur = blur; }
+function clearGlow()            { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }
+
+function drawRoundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
-function spawnBeamReversed(colorDef) {
-  const p = playerRect(), e = enemyRect();
-  _dispatchBeam(colorDef, e, p); // swap src/dst
+function lerpColor(a, b, t) {
+  const ah = parseInt(a.slice(1), 16), bh = parseInt(b.slice(1), 16);
+  const ar = (ah >> 16) & 0xff, ag = (ah >> 8) & 0xff, ab = ah & 0xff;
+  const br = (bh >> 16) & 0xff, bg = (bh >> 8) & 0xff, bb = bh & 0xff;
+  const rr = Math.round(ar + (br-ar)*t), rg = Math.round(ag + (bg-ag)*t), rb = Math.round(ab + (bb-ab)*t);
+  return '#' + ((1<<24)|(rr<<16)|(rg<<8)|rb).toString(16).slice(1);
 }
 
-function _dispatchBeam(colorDef, src, dst) {
+// ─── Health bar ───────────────────────────────────────────────────────────────
+function drawHealthBar(x, y, w, h, pct, glowColor, maxHp) {
+  const r = h * 0.4;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  drawRoundRect(x, y, w, h, r); ctx.fill();
+  if (pct > 0) {
+    const fillW = Math.max(r * 2, (w - 2) * pct);
+    const barCol = pct > 0.5 ? lerpColor('#22DD55', '#FFD700', (1-pct)*2) : lerpColor('#FFD700', '#FF2222', (0.5-pct)*2);
+    if (pct < 0.3) setGlow(glowColor, 14);
+    const grad = ctx.createLinearGradient(x + 1, y, x + 1 + fillW, y);
+    grad.addColorStop(0, barCol); grad.addColorStop(1, barCol + '99');
+    ctx.fillStyle = grad;
+    drawRoundRect(x + 1, y + 1, fillW, h - 2, r); ctx.fill();
+    clearGlow();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1;
+  drawRoundRect(x, y, w, h, r); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = `bold ${Math.max(9, h * 0.72)}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(Math.ceil(pct * maxHp) + ' / ' + maxHp, x + w * 0.5, y + h * 0.5);
+}
+
+// ─── Floating numbers ─────────────────────────────────────────────────────────
+function spawnFloatingNumber(text, rect, color, glow) {
+  particles.push({
+    type: 'floatNum', text, color, glow,
+    x: rect.cx + rand(-rect.w * 0.15, rect.w * 0.15),
+    y: rect.y !== undefined ? rect.y + rect.h * 0.2 : rect.cy - 20,
+    life: 1, alpha: 1,
+    fontSize: Math.max(16 * devicePixelRatio, (rect.w || 60) * 0.28),
+  });
+}
+
+// ─── Beam spawners ────────────────────────────────────────────────────────────
+function _dispatchBeamAt(colorDef, src, dst) {
   switch (colorDef.id) {
     case 'yellow': spawnLightning(src, dst, colorDef); break;
     case 'orange': spawnFlame(src, dst, colorDef);     break;
     case 'red':    spawnBurst(src, dst, colorDef);     break;
     case 'purple': spawnSpiral(src, dst, colorDef);    break;
     case 'blue':   spawnWave(src, dst, colorDef);      break;
+    case 'green':  spawnHealParticles(src);            break;
+  }
+}
+
+function _dispatchImpactAt(colorDef, rect) {
+  switch (colorDef.id) {
+    case 'yellow': spawnElectricBurst(rect, colorDef); break;
+    case 'orange': spawnFireSplash(rect, colorDef);    break;
+    case 'red':    spawnShrapnel(rect, colorDef);      break;
+    case 'purple': spawnImplosion(rect, colorDef);     break;
+    case 'blue':   spawnIceShatter(rect, colorDef);    break;
+  }
+}
+
+function spawnHealParticles(rect) {
+  for (let i = 0; i < 14; i++) {
+    particles.push({
+      type: 'heal', color: '#22DD55', glow: '#88ffaa',
+      x: rect.cx + rand(-rect.w * 0.4, rect.w * 0.4),
+      y: rect.cy + rand(-rect.h * 0.4, rect.h * 0.4),
+      vy: rand(1.5, 3) * devicePixelRatio,
+      size: rand(4, 8), life: 1, alpha: 1,
+    });
   }
 }
 
@@ -603,7 +974,7 @@ function spawnLightning(src, dst, c) {
 }
 
 function spawnFlame(src, dst, c) {
-  const count = 28;
+  const count = 24;
   for (let i = 0; i < count; i++) {
     setTimeout(() => {
       particles.push({
@@ -654,82 +1025,17 @@ function spawnWave(src, dst, c) {
       setTimeout(() => {
         particles.push({
           type: 'wave', color: c.hex, glow: c.glow,
-          sx: src.cx, sy: src.cy + row * 18 * devicePixelRatio,
-          ex: dst.cx, ey: dst.cy + row * 18 * devicePixelRatio,
+          sx: src.cx, sy: src.cy + row * 16 * devicePixelRatio,
+          ex: dst.cx, ey: dst.cy + row * 16 * devicePixelRatio,
           t: 0, life: 1, speed: 0.025,
-          size: rand(10, 18), alpha: 1, frozen: false,
+          size: rand(10, 18), alpha: 1,
         });
       }, col * 55);
     }
   }
 }
 
-// ─── Heal effect ──────────────────────────────────────────────────────────────
-function spawnHeal() {
-  const p = playerRect();
-  playerFlash = { color: COLORS[5], t: 0 };
-  for (let i = 0; i < 22; i++) {
-    particles.push({
-      type: 'heal', color: COLORS[5].hex, glow: COLORS[5].glow,
-      x: p.cx + rand(-p.w * 0.4, p.w * 0.4),
-      y: p.cy + rand(-p.h * 0.4, p.h * 0.4),
-      vy: rand(1.5, 3.5) * devicePixelRatio,
-      size: rand(4, 9), life: 1, alpha: 1,
-    });
-  }
-  particles.push({
-    type: 'glowPulse', color: COLORS[5].hex, glow: COLORS[5].glow,
-    x: p.cx, y: p.cy, radius: 0, maxRadius: p.w * 1.1,
-    life: 1, alpha: 0.7, speed: 0.022,
-  });
-}
-
-// ─── Floating numbers ─────────────────────────────────────────────────────────
-function spawnFloatingNumber(text, rect, color, glow) {
-  particles.push({
-    type: 'floatNum', text, color, glow,
-    x: rect.cx + rand(-rect.w * 0.15, rect.w * 0.15),
-    y: rect.y + rect.h * 0.2,
-    life: 1, alpha: 1,
-    fontSize: Math.max(18 * devicePixelRatio, rect.w * 0.28),
-  });
-}
-
-function spawnComboIndicator(comboCount, colorDef) {
-  const e = enemyRect();
-  particles.push({
-    type: 'floatNum',
-    text: 'x' + comboCount + ' COMBO!',
-    color: colorDef.glow,
-    glow: colorDef.hex,
-    x: e.cx,
-    y: e.y - e.h * 0.18,
-    life: 1, alpha: 1,
-    fontSize: Math.max(14 * devicePixelRatio, e.w * 0.2),
-  });
-}
-
 // ─── Impact spawners ──────────────────────────────────────────────────────────
-function spawnImpact(colorDef) {
-  const e = enemyRect();
-  _dispatchImpact(colorDef, e);
-}
-
-function spawnPlayerImpact(colorDef) {
-  const p = playerRect();
-  _dispatchImpact(colorDef, p);
-}
-
-function _dispatchImpact(colorDef, rect) {
-  switch (colorDef.id) {
-    case 'yellow': spawnElectricBurst(rect, colorDef); break;
-    case 'orange': spawnFireSplash(rect, colorDef);    break;
-    case 'red':    spawnShrapnel(rect, colorDef);      break;
-    case 'purple': spawnImplosion(rect, colorDef);     break;
-    case 'blue':   spawnIceShatter(rect, colorDef);    break;
-  }
-}
-
 function spawnElectricBurst(e, c) {
   particles.push({ type: 'ring', color: c.hex, glow: c.glow, x: e.cx, y: e.cy,
     radius: 0, maxRadius: e.w * 1.2, life: 1, alpha: 1, speed: 0.03 });
@@ -743,9 +1049,8 @@ function spawnElectricBurst(e, c) {
 }
 
 function spawnFireSplash(e, c) {
-  for (let i = 0; i < 30; i++) {
-    const angle = rand(0, Math.PI * 2);
-    const speed = rand(2, 8) * devicePixelRatio;
+  for (let i = 0; i < 28; i++) {
+    const angle = rand(0, Math.PI * 2), speed = rand(2, 8) * devicePixelRatio;
     particles.push({ type: 'fireDrop', color: c.hex, glow: c.glow,
       x: e.cx, y: e.cy,
       vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed - rand(1,3)*devicePixelRatio,
@@ -754,8 +1059,8 @@ function spawnFireSplash(e, c) {
 }
 
 function spawnShrapnel(e, c) {
-  for (let i = 0; i < 36; i++) {
-    const angle = (i / 36) * Math.PI * 2 + rand(-0.1, 0.1);
+  for (let i = 0; i < 30; i++) {
+    const angle = (i / 30) * Math.PI * 2 + rand(-0.1, 0.1);
     const speed = rand(5, 14) * devicePixelRatio;
     particles.push({ type: 'shrapnel', color: c.hex, glow: c.glow,
       x: e.cx, y: e.cy,
@@ -766,16 +1071,14 @@ function spawnShrapnel(e, c) {
 
 function spawnImplosion(e, c) {
   for (let i = 0; i < 20; i++) {
-    const angle = rand(0, Math.PI * 2);
-    const dist  = rand(e.w * 0.6, e.w * 1.4);
+    const angle = rand(0, Math.PI * 2), dist = rand(e.w * 0.6, e.w * 1.4);
     particles.push({ type: 'implode', color: c.hex, glow: c.glow,
       x: e.cx + Math.cos(angle)*dist, y: e.cy + Math.sin(angle)*dist,
       tx: e.cx, ty: e.cy, size: rand(6, 14), life: 1, alpha: 1, phase: 'in' });
   }
   setTimeout(() => {
-    for (let i = 0; i < 22; i++) {
-      const angle = rand(0, Math.PI * 2);
-      const speed = rand(3, 9) * devicePixelRatio;
+    for (let i = 0; i < 20; i++) {
+      const angle = rand(0, Math.PI * 2), speed = rand(3, 9) * devicePixelRatio;
       particles.push({ type: 'spark', color: c.glow, glow: c.glow,
         x: e.cx, y: e.cy, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
         size: rand(4, 10), life: 1, alpha: 1 });
@@ -785,11 +1088,9 @@ function spawnImplosion(e, c) {
 
 function spawnIceShatter(e, c) {
   particles.push({ type: 'iceRing', color: c.hex, glow: c.glow,
-    x: e.cx, y: e.cy, radius: 0, maxRadius: e.w * 1.3,
-    life: 1, alpha: 0.85, speed: 0.02 });
+    x: e.cx, y: e.cy, radius: 0, maxRadius: e.w * 1.3, life: 1, alpha: 0.85, speed: 0.02 });
   for (let i = 0; i < 18; i++) {
-    const angle = (i / 18) * Math.PI * 2;
-    const speed = rand(1, 4) * devicePixelRatio;
+    const angle = (i / 18) * Math.PI * 2, speed = rand(1, 4) * devicePixelRatio;
     particles.push({ type: 'iceShard', color: c.hex, glow: c.glow,
       x: e.cx + Math.cos(angle)*e.w*0.09, y: e.cy + Math.sin(angle)*e.w*0.09,
       vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
@@ -797,262 +1098,7 @@ function spawnIceShatter(e, c) {
   }
 }
 
-// ─── Draw helpers ─────────────────────────────────────────────────────────────
-function setGlow(color, blur) { ctx.shadowColor = color; ctx.shadowBlur = blur; }
-function clearGlow()           { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }
-
-function drawRoundRect(x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-// ─── Health bars ──────────────────────────────────────────────────────────────
-function drawHealthBar(x, y, w, h, pct, glowColor, maxHp) {
-  const hp = maxHp || MAX_HP;
-  const r = h * 0.4;
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  drawRoundRect(x, y, w, h, r); ctx.fill();
-
-  if (pct > 0) {
-    const fillW  = Math.max(r * 2, (w - 2) * pct);
-    const barCol = pct > 0.5
-      ? lerpColor('#22DD55', '#FFD700', (1 - pct) * 2)
-      : lerpColor('#FFD700', '#FF2222', (0.5 - pct) * 2);
-    if (pct < 0.3) setGlow(glowColor, 14);
-    const grad = ctx.createLinearGradient(x + 1, y, x + 1 + fillW, y);
-    grad.addColorStop(0, barCol);
-    grad.addColorStop(1, barCol + '99');
-    ctx.fillStyle = grad;
-    drawRoundRect(x + 1, y + 1, fillW, h - 2, r); ctx.fill();
-    clearGlow();
-  }
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1;
-  drawRoundRect(x, y, w, h, r); ctx.stroke();
-
-  ctx.fillStyle    = 'rgba(255,255,255,0.85)';
-  ctx.font         = `bold ${Math.max(9, h * 0.72)}px system-ui`;
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(Math.ceil(pct * hp) + ' HP', x + w * 0.5, y + h * 0.5);
-}
-
-function drawHUD() {
-  const p    = playerRect();
-  const e    = enemyRect();
-  const barH = Math.max(10, p.w * 0.07);
-  const barY = p.y - barH - 10;
-  const eMax = waveMaxHP();
-  drawHealthBar(p.x, barY, p.w, barH, playerHP / MAX_HP, COLORS[5].glow);
-  drawHealthBar(e.x, barY, e.w, barH, enemyHP / eMax,    COLORS[2].glow, eMax);
-
-  // Score (centered)
-  const scoreSize = Math.max(11, canvas.width * 0.022);
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle    = 'rgba(255,255,255,0.82)';
-  ctx.font         = `bold ${scoreSize}px system-ui`;
-  ctx.fillText('SCORE  ' + score, canvas.width * 0.5, 12);
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
-  ctx.font      = `${scoreSize * 0.78}px system-ui`;
-  ctx.fillText('BEST  ' + highScore, canvas.width * 0.5, 14 + scoreSize);
-
-  // Wave (right-aligned)
-  ctx.textAlign = 'right';
-  ctx.fillStyle = 'rgba(255,215,0,0.88)';
-  ctx.font      = `bold ${scoreSize}px system-ui`;
-  ctx.fillText('WAVE ' + wave, canvas.width - 14, 12);
-
-  // Combo decay bar
-  if (combo >= 2 && comboTimer > 0) {
-    const pct    = comboTimer / COMBO_WINDOW;
-    const barW   = canvas.width * 0.18;
-    const barX   = canvas.width * 0.5 - barW * 0.5;
-    const barYy  = 16 + scoreSize * 2;
-    const barHH  = Math.max(6, scoreSize * 0.55);
-    ctx.fillStyle = 'rgba(255,255,255,0.1)';
-    drawRoundRect(barX, barYy, barW, barHH, barHH * 0.4); ctx.fill();
-    setGlow('#ff88ff', 8);
-    ctx.fillStyle = lerpColor('#FFD700', '#cc88ff', 1 - pct);
-    drawRoundRect(barX, barYy, barW * pct, barHH, barHH * 0.4); ctx.fill();
-    clearGlow();
-  }
-}
-
-// ─── Game-over overlay ────────────────────────────────────────────────────────
-function drawGameOver() {
-  ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.78)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  setGlow('#ff8888', 50);
-  ctx.fillStyle = '#FF4444';
-  ctx.font = `bold ${Math.max(32, canvas.width * 0.075)}px system-ui`;
-  ctx.fillText('YOU LOSE!', canvas.width * 0.5, canvas.height * 0.35);
-  clearGlow();
-
-  ctx.fillStyle = 'rgba(255,215,0,0.7)';
-  ctx.font = `bold ${Math.max(14, canvas.width * 0.025)}px system-ui`;
-  ctx.fillText('Reached Wave ' + wave, canvas.width * 0.5, canvas.height * 0.44);
-
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.font = `bold ${Math.max(16, canvas.width * 0.032)}px system-ui`;
-  ctx.fillText('SCORE  ' + score, canvas.width * 0.5, canvas.height * 0.52);
-
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  ctx.font = `${Math.max(13, canvas.width * 0.024)}px system-ui`;
-  ctx.fillText('BEST  ' + highScore, canvas.width * 0.5, canvas.height * 0.59);
-
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.font = `${Math.max(12, canvas.width * 0.022)}px system-ui`;
-  ctx.fillText('Tap anywhere to play again', canvas.width * 0.5, canvas.height * 0.68);
-  ctx.restore();
-}
-
-// ─── Draw squares ─────────────────────────────────────────────────────────────
-function drawSquares() {
-  const p = playerRect();
-  const e = enemyRect();
-  const r = p.w * 0.1;
-
-  // ── Player square ──────────────────────────────────────────────────────────
-  let pColor = '#4a4a5a';
-  if (playerFlash) {
-    const ease = Math.sin(playerFlash.t * Math.PI);
-    pColor = lerpColor('#4a4a5a', playerFlash.color.hex, ease);
-    setGlow(playerFlash.color.glow, ease * 30);
-  }
-  if (playerImpact) {
-    const ease = Math.sin(playerImpact.t * Math.PI);
-    pColor = lerpColor(pColor, playerImpact.color.hex, ease * 0.6);
-    setGlow(playerImpact.color.glow, ease * 30);
-  }
-  drawRoundRect(p.x, p.y, p.w, p.h, r);
-  ctx.fillStyle = pColor; ctx.fill();
-  clearGlow();
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.font = `bold ${p.w * 0.14}px system-ui`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('PLAYER', p.cx, p.cy);
-
-  // ── Enemy square ───────────────────────────────────────────────────────────
-  let eColor = '#4a4a5a';
-  if (enemyFlash) {
-    const ease = Math.sin(enemyFlash.t * Math.PI);
-    eColor = lerpColor('#4a4a5a', enemyFlash.color.hex, ease);
-    setGlow(enemyFlash.color.glow, ease * 30);
-  }
-  if (enemyImpact) {
-    const ease = Math.sin(enemyImpact.t * Math.PI);
-    eColor = lerpColor(eColor, enemyImpact.color.hex, ease * 0.6);
-    setGlow(enemyImpact.color.glow, ease * 30);
-  }
-  drawRoundRect(e.x, e.y, e.w, e.h, r);
-  ctx.fillStyle = eColor; ctx.fill();
-  clearGlow();
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.font = `bold ${e.w * 0.14}px system-ui`;
-  ctx.fillText('ENEMY', e.cx, e.cy);
-
-  // Wave transitioning — draw enemy HP bar on top of the dead enemy square
-  if (waveTransitioning) {
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    drawRoundRect(e.x, e.y, e.w, e.h, r); ctx.fill();
-  }
-}
-
-// ─── Draw buttons ─────────────────────────────────────────────────────────────
-function drawButtons() {
-  const fontSize = Math.max(10, BUTTON_SIZE() * 0.15);
-  const now = performance.now();
-
-  for (const btn of buttons) {
-    const r  = btn.w * 0.14;
-    const cx = btn.x + btn.w * 0.5;
-    const cy = btn.y + btn.h * 0.5;
-
-    // ── Card image (clipped to rounded rect) ──────────────────────────────
-    ctx.save();
-    drawRoundRect(btn.x, btn.y, btn.w, btn.h, r);
-    ctx.clip();
-    const img = cardImages[btn.id];
-    if (img && img.complete && img.naturalWidth > 0) {
-      ctx.drawImage(img, btn.x, btn.y, btn.w, btn.h);
-    } else {
-      // Gradient fallback while image loads
-      const grad = ctx.createLinearGradient(btn.x, btn.y, btn.x, btn.y + btn.h);
-      grad.addColorStop(0, btn.hex); grad.addColorStop(1, btn.dark);
-      ctx.fillStyle = grad;
-      drawRoundRect(btn.x, btn.y, btn.w, btn.h, r); ctx.fill();
-    }
-    // Subtle vignette so the border stays readable
-    const vignette = ctx.createRadialGradient(cx, cy, btn.w * 0.12, cx, cy, btn.w * 0.72);
-    vignette.addColorStop(0, 'rgba(0,0,0,0)');
-    vignette.addColorStop(1, 'rgba(0,0,0,0.5)');
-    ctx.fillStyle = vignette;
-    drawRoundRect(btn.x, btn.y, btn.w, btn.h, r); ctx.fill();
-    ctx.restore();
-
-    // ── Glow border ───────────────────────────────────────────────────────
-    setGlow(btn.glow, 14);
-    ctx.strokeStyle = btn.hex;
-    ctx.lineWidth   = Math.max(1.5, btn.w * 0.025);
-    drawRoundRect(btn.x, btn.y, btn.w, btn.h, r); ctx.stroke();
-    clearGlow();
-
-    // ── Combo-pending highlight: pulse white ring around first button pressed ──
-    if (lastAttack && (now - lastAttack.time) < COMBO_SEQ_WINDOW
-        && btn.id === lastAttack.colorDef.id) {
-      const pulse = 0.5 + 0.5 * Math.sin(now * 0.008);
-      setGlow('#ffffff', 22 * pulse);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth   = Math.max(2, btn.w * 0.04) * pulse;
-      drawRoundRect(btn.x - 3, btn.y - 3, btn.w + 6, btn.h + 6, r + 3);
-      ctx.stroke();
-      clearGlow();
-    }
-
-    // ── Label below button ────────────────────────────────────────────────
-    ctx.fillStyle    = 'rgba(255,255,255,0.75)';
-    ctx.font         = `bold ${fontSize}px system-ui`;
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(btn.label, cx, btn.y + btn.h + 6);
-
-    // ── Cooldown overlay ──────────────────────────────────────────────────
-    const cd = cooldowns[btn.id];
-    if (cd && cd.remaining > 0) {
-      const pct = cd.remaining / cd.total;
-      drawRoundRect(btn.x, btn.y, btn.w, btn.h, r);
-      ctx.fillStyle = 'rgba(0,0,0,0.58)'; ctx.fill();
-      const arcR = btn.w * 0.32;
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = Math.max(2, btn.w * 0.05);
-      ctx.lineCap = 'round';
-      setGlow('white', 8);
-      ctx.beginPath();
-      ctx.arc(cx, cy, arcR, -Math.PI * 0.5, -Math.PI * 0.5 + pct * Math.PI * 2);
-      ctx.stroke();
-      clearGlow();
-      ctx.fillStyle = 'white';
-      ctx.font = `bold ${Math.max(10, btn.w * 0.26)}px system-ui`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText((cd.remaining / 1000).toFixed(1), cx, cy);
-    }
-  }
-}
-
-// ─── Particle system — update ─────────────────────────────────────────────────
+// ─── Particle update ──────────────────────────────────────────────────────────
 function updateParticles(dt) {
   particles = particles.filter(p => p.life > 0);
   for (const p of particles) {
@@ -1076,7 +1122,6 @@ function updateParticles(dt) {
   }
 }
 
-// ─── Particle system — draw ───────────────────────────────────────────────────
 function drawParticles() {
   for (const p of particles) {
     if (p.alpha <= 0) continue;
@@ -1100,42 +1145,27 @@ function drawParticles() {
   }
 }
 
-// ── Lightning ─────────────────────────────────────────────────────────────────
-function updateLightning(p, dt) {
-  p.t += p.speed * dt;
-  if (p.t >= 1) { p.life = 0; return; }
-  p.alpha = p.t < 0.5 ? 1 : 1 - (p.t - 0.5) * 2;
-}
+function updateLightning(p, dt) { p.t += p.speed * dt; if (p.t >= 1) { p.life = 0; return; } p.alpha = p.t < 0.5 ? 1 : 1 - (p.t - 0.5) * 2; }
 function drawLightning(p) {
   const pts = [];
   for (let i = 0; i <= p.segments; i++) {
-    const tt  = i / p.segments;
-    const bx  = p.sx + (p.ex - p.sx) * tt;
-    const by  = p.sy + (p.ey - p.sy) * tt;
+    const tt = i / p.segments;
+    const bx = p.sx + (p.ex - p.sx) * tt, by = p.sy + (p.ey - p.sy) * tt;
     const perp = { x: -(p.ey - p.sy), y: p.ex - p.sx };
-    const len  = Math.sqrt(perp.x*perp.x + perp.y*perp.y);
-    const jit  = (i > 0 && i < p.segments) ? (Math.random()-0.5)*p.amp : 0;
+    const len = Math.sqrt(perp.x*perp.x + perp.y*perp.y);
+    const jit = (i > 0 && i < p.segments) ? (Math.random()-0.5)*p.amp : 0;
     pts.push({ x: bx + (perp.x/len)*jit, y: by + (perp.y/len)*jit });
   }
-  ctx.save();
-  ctx.globalAlpha = p.alpha * p.alpha;
-  setGlow(p.glow, 18);
-  ctx.strokeStyle = p.color; ctx.lineWidth = p.width; ctx.lineCap = 'round';
+  ctx.save(); ctx.globalAlpha = p.alpha * p.alpha;
+  setGlow(p.glow, 18); ctx.strokeStyle = p.color; ctx.lineWidth = p.width; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
   ctx.stroke(); clearGlow(); ctx.restore();
 }
 
-// ── Flame ─────────────────────────────────────────────────────────────────────
-function updateFlame(p, dt) {
-  p.t += p.speed * dt;
-  if (p.t >= 1) { p.life = 0; return; }
-  p.alpha   = p.t < 0.7 ? 1 : 1 - (p.t - 0.7) / 0.3;
-  p.wobble += p.wobbleSpeed * dt * 0.016;
-}
+function updateFlame(p, dt) { p.t += p.speed * dt; if (p.t >= 1) { p.life = 0; return; } p.alpha = p.t < 0.7 ? 1 : 1-(p.t-0.7)/0.3; p.wobble += p.wobbleSpeed * dt * 0.016; }
 function drawFlame(p) {
-  const x    = p.x + (p.tx - p.x)*p.t + Math.sin(p.wobble)*12;
-  const y    = p.y + (p.ty - p.y)*p.t + Math.cos(p.wobble*0.7)*8;
+  const x = p.x + (p.tx-p.x)*p.t + Math.sin(p.wobble)*12, y = p.y + (p.ty-p.y)*p.t + Math.cos(p.wobble*0.7)*8;
   const size = p.size * (1 - p.t*0.5);
   ctx.save(); ctx.globalAlpha = p.alpha;
   const grad = ctx.createRadialGradient(x, y, 0, x, y, size);
@@ -1145,263 +1175,547 @@ function drawFlame(p) {
   clearGlow(); ctx.restore();
 }
 
-// ── Projectile ────────────────────────────────────────────────────────────────
-function updateProjectile(p, dt) {
-  p.x += p.vx * dt * 0.016; p.y += p.vy * dt * 0.016;
-  const dx = p.tx - p.x, dy = p.ty - p.y;
-  const dist = Math.sqrt(dx*dx + dy*dy);
-  p.life = dist > 5 ? 1 : 0;
-  p.alpha = Math.min(1, dist / 60);
-}
-function drawProjectile(p) {
-  ctx.save(); ctx.globalAlpha = p.alpha;
-  setGlow(p.glow, 10); ctx.fillStyle = p.color;
-  ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
-  clearGlow(); ctx.restore();
-}
+function updateProjectile(p, dt) { p.x += p.vx*dt*0.016; p.y += p.vy*dt*0.016; const dx=p.tx-p.x,dy=p.ty-p.y; const dist=Math.sqrt(dx*dx+dy*dy); p.life=dist>5?1:0; p.alpha=Math.min(1,dist/60); }
+function drawProjectile(p) { ctx.save(); ctx.globalAlpha=p.alpha; setGlow(p.glow,10); ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill(); clearGlow(); ctx.restore(); }
 
-// ── Spiral ────────────────────────────────────────────────────────────────────
-function updateSpiral(p, dt) {
-  p.t += p.speed * dt;
-  if (p.t >= 1) { p.life = 0; return; }
-  p.orbitAngle += p.orbitSpeed * dt * 0.016;
-  p.alpha = p.t < 0.8 ? 1 : 1 - (p.t - 0.8) / 0.2;
-}
+function updateSpiral(p, dt) { p.t += p.speed*dt; if (p.t>=1){p.life=0;return;} p.orbitAngle += p.orbitSpeed*dt*0.016; p.alpha = p.t<0.8?1:1-(p.t-0.8)/0.2; }
 function drawSpiral(p) {
-  const bx    = p.sx + (p.ex - p.sx)*p.t;
-  const by    = p.sy + (p.ey - p.sy)*p.t;
-  const decay = 1 - p.t;
-  const x     = bx + Math.cos(p.orbitAngle)*p.orbitRadius*decay;
-  const y     = by + Math.sin(p.orbitAngle)*p.orbitRadius*decay;
-  ctx.save(); ctx.globalAlpha = p.alpha;
-  setGlow(p.glow, 16);
-  const grad = ctx.createRadialGradient(x, y, 0, x, y, p.size);
-  grad.addColorStop(0, '#ffffff'); grad.addColorStop(0.4, p.color); grad.addColorStop(1, 'transparent');
-  ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x, y, p.size, 0, Math.PI*2); ctx.fill();
+  const bx=p.sx+(p.ex-p.sx)*p.t, by=p.sy+(p.ey-p.sy)*p.t, decay=1-p.t;
+  const x=bx+Math.cos(p.orbitAngle)*p.orbitRadius*decay, y=by+Math.sin(p.orbitAngle)*p.orbitRadius*decay;
+  ctx.save(); ctx.globalAlpha=p.alpha; setGlow(p.glow,16);
+  const grad=ctx.createRadialGradient(x,y,0,x,y,p.size);
+  grad.addColorStop(0,'#ffffff'); grad.addColorStop(0.4,p.color); grad.addColorStop(1,'transparent');
+  ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(x,y,p.size,0,Math.PI*2); ctx.fill();
   clearGlow(); ctx.restore();
 }
 
-// ── Wave ──────────────────────────────────────────────────────────────────────
-function updateWave(p, dt) {
-  p.t += p.speed * dt;
-  if (p.t >= 1) { p.life = 0; return; }
-  p.alpha = p.t < 0.85 ? 1 : 1 - (p.t - 0.85) / 0.15;
-}
+function updateWave(p, dt) { p.t += p.speed*dt; if (p.t>=1){p.life=0;return;} p.alpha=p.t<0.85?1:1-(p.t-0.85)/0.15; }
 function drawWave(p) {
-  const x = p.sx + (p.ex - p.sx)*p.t, y = p.sy + (p.ey - p.sy)*p.t;
-  ctx.save(); ctx.globalAlpha = p.alpha * 0.85;
-  setGlow(p.glow, 16);
-  const grad = ctx.createRadialGradient(x, y, 0, x, y, p.size);
-  grad.addColorStop(0, '#eef8ff'); grad.addColorStop(0.4, p.color); grad.addColorStop(1, 'transparent');
-  ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x, y, p.size, 0, Math.PI*2); ctx.fill();
+  const x=p.sx+(p.ex-p.sx)*p.t, y=p.sy+(p.ey-p.sy)*p.t;
+  ctx.save(); ctx.globalAlpha=p.alpha*0.85; setGlow(p.glow,16);
+  const grad=ctx.createRadialGradient(x,y,0,x,y,p.size);
+  grad.addColorStop(0,'#eef8ff'); grad.addColorStop(0.4,p.color); grad.addColorStop(1,'transparent');
+  ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(x,y,p.size,0,Math.PI*2); ctx.fill();
   clearGlow(); ctx.restore();
 }
 
-// ── Heal ──────────────────────────────────────────────────────────────────────
-function updateHeal(p, dt) {
-  p.y -= p.vy * dt * 0.016; p.life -= 0.018 * dt; p.alpha = p.life;
-}
-function drawHeal(p) {
-  ctx.save(); ctx.globalAlpha = p.alpha;
-  setGlow(p.glow, 12); ctx.fillStyle = p.color;
-  ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.alpha, 0, Math.PI*2); ctx.fill();
-  clearGlow(); ctx.restore();
-}
+function updateHeal(p, dt) { p.y -= p.vy*dt*0.016; p.life -= 0.018*dt; p.alpha=p.life; }
+function drawHeal(p) { ctx.save(); ctx.globalAlpha=p.alpha; setGlow(p.glow,12); ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.alpha,0,Math.PI*2); ctx.fill(); clearGlow(); ctx.restore(); }
 
-// ── Glow pulse ────────────────────────────────────────────────────────────────
-function updateGlowPulse(p, dt) {
-  p.radius += p.speed * dt * p.maxRadius; p.alpha -= 0.018 * dt;
-  if (p.alpha <= 0 || p.radius >= p.maxRadius) p.life = 0;
-}
-function drawGlowPulse(p) {
-  ctx.save(); ctx.globalAlpha = p.alpha;
-  const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius);
-  grad.addColorStop(0, 'transparent'); grad.addColorStop(0.6, p.color + '44'); grad.addColorStop(1, p.glow + '00');
-  ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2); ctx.fill(); ctx.restore();
-}
+function updateGlowPulse(p, dt) { p.radius += p.speed*dt*p.maxRadius; p.alpha -= 0.018*dt; if (p.alpha<=0||p.radius>=p.maxRadius) p.life=0; }
+function drawGlowPulse(p) { ctx.save(); ctx.globalAlpha=p.alpha; const grad=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.radius); grad.addColorStop(0,'transparent'); grad.addColorStop(0.6,p.color+'44'); grad.addColorStop(1,p.glow+'00'); ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(p.x,p.y,p.radius,0,Math.PI*2); ctx.fill(); ctx.restore(); }
 
-// ── Ring ──────────────────────────────────────────────────────────────────────
-function updateRing(p, dt) {
-  p.radius += p.speed * dt * p.maxRadius; p.alpha -= 0.025 * dt;
-  if (p.alpha <= 0 || p.radius >= p.maxRadius) p.life = 0;
-}
-function drawRing(p) {
-  ctx.save(); ctx.globalAlpha = p.alpha;
-  setGlow(p.glow, 20); ctx.strokeStyle = p.color; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2); ctx.stroke();
-  clearGlow(); ctx.restore();
-}
+function updateRing(p, dt) { p.radius += p.speed*dt*p.maxRadius; p.alpha -= 0.025*dt; if (p.alpha<=0||p.radius>=p.maxRadius) p.life=0; }
+function drawRing(p) { ctx.save(); ctx.globalAlpha=p.alpha; setGlow(p.glow,20); ctx.strokeStyle=p.color; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(p.x,p.y,p.radius,0,Math.PI*2); ctx.stroke(); clearGlow(); ctx.restore(); }
 
-// ── Spark ─────────────────────────────────────────────────────────────────────
-function updateSpark(p, dt) {
-  p.x += p.vx * dt * 0.016; p.y += p.vy * dt * 0.016;
-  p.life -= 0.022 * dt; p.alpha = p.life;
-}
-function drawSpark(p) {
-  ctx.save(); ctx.globalAlpha = p.alpha;
-  setGlow(p.glow, 10); ctx.fillStyle = p.color;
-  ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.alpha, 0, Math.PI*2); ctx.fill();
-  clearGlow(); ctx.restore();
-}
+function updateSpark(p, dt) { p.x+=p.vx*dt*0.016; p.y+=p.vy*dt*0.016; p.life-=0.022*dt; p.alpha=p.life; }
+function drawSpark(p) { ctx.save(); ctx.globalAlpha=p.alpha; setGlow(p.glow,10); ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.alpha,0,Math.PI*2); ctx.fill(); clearGlow(); ctx.restore(); }
 
-// ── Fire drop ─────────────────────────────────────────────────────────────────
-function updateFireDrop(p, dt) {
-  p.x += p.vx * dt * 0.016; p.y += p.vy * dt * 0.016;
-  p.vy += 0.15 * dt; p.life -= 0.016 * dt; p.alpha = p.life;
-}
-function drawFireDrop(p) {
-  ctx.save(); ctx.globalAlpha = p.alpha;
-  setGlow(p.glow, 14);
-  const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*p.life);
-  grad.addColorStop(0, '#ffffff'); grad.addColorStop(0.3, p.color); grad.addColorStop(1, 'transparent');
-  ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(p.x, p.y, p.size*p.life, 0, Math.PI*2); ctx.fill();
-  clearGlow(); ctx.restore();
-}
+function updateFireDrop(p, dt) { p.x+=p.vx*dt*0.016; p.y+=p.vy*dt*0.016; p.vy+=0.15*dt; p.life-=0.016*dt; p.alpha=p.life; }
+function drawFireDrop(p) { ctx.save(); ctx.globalAlpha=p.alpha; setGlow(p.glow,14); const grad=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.size*p.life); grad.addColorStop(0,'#ffffff'); grad.addColorStop(0.3,p.color); grad.addColorStop(1,'transparent'); ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2); ctx.fill(); clearGlow(); ctx.restore(); }
 
-// ── Shrapnel ─────────────────────────────────────────────────────────────────
-function updateShrapnel(p, dt) {
-  p.x += p.vx * dt * 0.016; p.y += p.vy * dt * 0.016;
-  p.vx *= 0.97; p.vy *= 0.97; p.life -= 0.018 * dt; p.alpha = p.life;
-}
-function drawShrapnel(p) {
-  ctx.save(); ctx.globalAlpha = p.alpha;
-  setGlow(p.glow, 8); ctx.fillStyle = p.color;
-  ctx.beginPath(); ctx.rect(p.x - p.size*0.5, p.y - p.size*0.5, p.size, p.size*0.4); ctx.fill();
-  clearGlow(); ctx.restore();
-}
+function updateShrapnel(p, dt) { p.x+=p.vx*dt*0.016; p.y+=p.vy*dt*0.016; p.vx*=0.97; p.vy*=0.97; p.life-=0.018*dt; p.alpha=p.life; }
+function drawShrapnel(p) { ctx.save(); ctx.globalAlpha=p.alpha; setGlow(p.glow,8); ctx.fillStyle=p.color; ctx.beginPath(); ctx.rect(p.x-p.size*0.5,p.y-p.size*0.5,p.size,p.size*0.4); ctx.fill(); clearGlow(); ctx.restore(); }
 
-// ── Implode ───────────────────────────────────────────────────────────────────
-function updateImplode(p, dt) {
-  if (p.phase === 'in') {
-    p.x += (p.tx - p.x) * 0.08 * dt; p.y += (p.ty - p.y) * 0.08 * dt;
-    const dx = p.tx - p.x, dy = p.ty - p.y;
-    if (Math.sqrt(dx*dx + dy*dy) < 4) { p.life = 0; return; }
+function updateImplode(p, dt) { if (p.phase==='in'){p.x+=(p.tx-p.x)*0.08*dt; p.y+=(p.ty-p.y)*0.08*dt; const dx=p.tx-p.x,dy=p.ty-p.y; if(Math.sqrt(dx*dx+dy*dy)<4){p.life=0;return;}} p.life-=0.012*dt; p.alpha=p.life; }
+function drawImplode(p) { ctx.save(); ctx.globalAlpha=p.alpha; setGlow(p.glow,14); const grad=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.size); grad.addColorStop(0,'#ffffff44'); grad.addColorStop(0.4,p.color); grad.addColorStop(1,'transparent'); ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill(); clearGlow(); ctx.restore(); }
+
+function updateIceRing(p, dt) { p.radius+=p.speed*dt*p.maxRadius; p.alpha-=0.02*dt; if(p.alpha<=0||p.radius>=p.maxRadius)p.life=0; }
+function drawIceRing(p) { ctx.save(); ctx.globalAlpha=p.alpha; setGlow(p.glow,24); const grad=ctx.createRadialGradient(p.x,p.y,p.radius*0.7,p.x,p.y,p.radius); grad.addColorStop(0,p.color+'aa'); grad.addColorStop(1,p.glow+'00'); ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(p.x,p.y,p.radius,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#eef8ff'; ctx.lineWidth=2; ctx.stroke(); clearGlow(); ctx.restore(); }
+
+function updateIceShard(p, dt) { p.x+=p.vx*dt*0.016; p.y+=p.vy*dt*0.016; p.angle+=0.05*dt; p.life-=0.015*dt; p.alpha=p.life; }
+function drawIceShard(p) { ctx.save(); ctx.globalAlpha=p.alpha*0.9; ctx.translate(p.x,p.y); ctx.rotate(p.angle); setGlow(p.glow,12); ctx.fillStyle=p.color+'bb'; ctx.strokeStyle='#eef8ff'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,-p.size); ctx.lineTo(p.size*0.4,0); ctx.lineTo(0,p.size); ctx.lineTo(-p.size*0.4,0); ctx.closePath(); ctx.fill(); ctx.stroke(); clearGlow(); ctx.restore(); }
+
+function updateFloatNum(p, dt) { p.y -= (dt/1000)*55*devicePixelRatio; p.life -= dt/1400; p.alpha = Math.min(1, p.life*4); }
+function drawFloatNum(p) { ctx.save(); ctx.globalAlpha=Math.max(0,p.alpha); ctx.font=`bold ${p.fontSize}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.strokeStyle='rgba(0,0,0,0.7)'; ctx.lineWidth=p.fontSize*0.1; ctx.lineJoin='round'; ctx.strokeText(p.text,p.x,p.y); setGlow(p.glow,14); ctx.fillStyle=p.color; ctx.fillText(p.text,p.x,p.y); clearGlow(); ctx.restore(); }
+
+// ─── Tween updates ────────────────────────────────────────────────────────────
+function updateTweens(dt) {
+  if (playerFlash) { playerFlash.t += 0.025*dt; if (playerFlash.t >= 1) playerFlash = null; }
+  if (enemyFlash)  { enemyFlash.t  += 0.025*dt; if (enemyFlash.t  >= 1) enemyFlash  = null; }
+  if (enemyImpact) {
+    enemyImpact.t += 0.022*dt;
+    if (enemyImpact.t >= 1) { enemyImpact = null; }
+    else if (enemyImpact.t > 0.05 && !enemyImpact.spawned) {
+      enemyImpact.spawned = true;
+      const r = fieldSlotRect('enemy', 2);
+      _dispatchImpactAt(enemyImpact.color, r);
+    }
   }
-  p.life -= 0.012 * dt; p.alpha = p.life;
-}
-function drawImplode(p) {
-  ctx.save(); ctx.globalAlpha = p.alpha;
-  setGlow(p.glow, 14);
-  const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
-  grad.addColorStop(0, '#ffffff44'); grad.addColorStop(0.4, p.color); grad.addColorStop(1, 'transparent');
-  ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
-  clearGlow(); ctx.restore();
-}
-
-// ── Ice ring ──────────────────────────────────────────────────────────────────
-function updateIceRing(p, dt) {
-  p.radius += p.speed * dt * p.maxRadius; p.alpha -= 0.02 * dt;
-  if (p.alpha <= 0 || p.radius >= p.maxRadius) p.life = 0;
-}
-function drawIceRing(p) {
-  ctx.save(); ctx.globalAlpha = p.alpha;
-  setGlow(p.glow, 24);
-  const grad = ctx.createRadialGradient(p.x, p.y, p.radius*0.7, p.x, p.y, p.radius);
-  grad.addColorStop(0, p.color + 'aa'); grad.addColorStop(1, p.glow + '00');
-  ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle = '#eef8ff'; ctx.lineWidth = 2; ctx.stroke();
-  clearGlow(); ctx.restore();
+  if (playerImpact) {
+    playerImpact.t += 0.022*dt;
+    if (playerImpact.t >= 1) { playerImpact = null; }
+    else if (playerImpact.t > 0.05 && !playerImpact.spawned) {
+      playerImpact.spawned = true;
+      const r = fieldSlotRect('player', 2);
+      _dispatchImpactAt(playerImpact.color, r);
+    }
+  }
 }
 
-// ── Ice shard ─────────────────────────────────────────────────────────────────
-function updateIceShard(p, dt) {
-  p.x += p.vx * dt * 0.016; p.y += p.vy * dt * 0.016;
-  p.angle += 0.05 * dt; p.life -= 0.015 * dt; p.alpha = p.life;
-}
-function drawIceShard(p) {
-  ctx.save(); ctx.globalAlpha = p.alpha * 0.9;
-  ctx.translate(p.x, p.y); ctx.rotate(p.angle);
-  setGlow(p.glow, 12); ctx.fillStyle = p.color + 'bb'; ctx.strokeStyle = '#eef8ff'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, -p.size); ctx.lineTo(p.size*0.4, 0);
-  ctx.lineTo(0, p.size); ctx.lineTo(-p.size*0.4, 0); ctx.closePath();
-  ctx.fill(); ctx.stroke(); clearGlow(); ctx.restore();
-}
+// ─── Drawing: card shape ──────────────────────────────────────────────────────
+function drawCardShape(card, x, y, w, h, opts) {
+  opts = opts || {};
+  const r  = w * 0.1;
+  const cx = x + w * 0.5;
+  ctx.save();
+  if (opts.dim) ctx.globalAlpha = 0.42;
 
-// ── Float number ─────────────────────────────────────────────────────────────
-function updateFloatNum(p, dt) {
-  p.y    -= (dt / 1000) * 55 * devicePixelRatio;
-  p.life -= dt / 1400;
-  p.alpha = Math.min(1, p.life * 4);
-}
-function drawFloatNum(p) {
-  ctx.save(); ctx.globalAlpha = Math.max(0, p.alpha);
-  ctx.font = `bold ${p.fontSize}px system-ui`;
+  // Background gradient
+  const grad = ctx.createLinearGradient(x, y, x, y + h);
+  grad.addColorStop(0, card.colorDef.hex + 'cc');
+  grad.addColorStop(1, card.colorDef.dark + 'ff');
+  drawRoundRect(x, y, w, h, r);
+  ctx.fillStyle = grad; ctx.fill();
+
+  // Creature art image (middle band)
+  const artY = y + h * 0.15;
+  const artH = h * 0.44;
+  const artX = x + 2;
+  const artW = w - 4;
+  ctx.save();
+  drawRoundRect(artX, artY, artW, artH, r * 0.55);
+  ctx.clip();
+  const img = CARD_IMAGES[card.id];
+  if (img && img.complete && img.naturalWidth > 0) {
+    const scale = Math.max(artW / img.naturalWidth, artH / img.naturalHeight);
+    const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+    ctx.drawImage(img, artX + (artW - dw) * 0.5, artY + (artH - dh) * 0.5, dw, dh);
+  }
+  const artGrad = ctx.createLinearGradient(artX, artY, artX, artY + artH);
+  artGrad.addColorStop(0, card.colorDef.hex + '55');
+  artGrad.addColorStop(0.55, 'transparent');
+  artGrad.addColorStop(1, card.colorDef.dark + 'aa');
+  ctx.fillStyle = artGrad; ctx.fillRect(artX, artY, artW, artH);
+  ctx.restore();
+
+  // Border
+  const isSel = opts.selected || opts.isAttacker;
+  if (isSel) {
+    const pulse = opts.isAttacker ? 0.5 + 0.5 * Math.sin(performance.now() * 0.007) : 1;
+    setGlow('#ffffff', 22 * pulse);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(2, w * 0.045);
+  } else if (card.level >= 3) {
+    const hue = (performance.now() * 0.15) % 360;
+    const rc  = `hsl(${hue},100%,70%)`;
+    setGlow(rc, 26); ctx.strokeStyle = rc;
+    ctx.lineWidth = Math.max(2, w * 0.055);
+  } else if (card.level === 2) {
+    setGlow('#FFD700', 20); ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = Math.max(2, w * 0.042);
+  } else if (card.ability === 'taunt') {
+    setGlow('#FFD700', 12);
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = Math.max(2, w * 0.035);
+  } else {
+    setGlow(card.colorDef.glow, 6);
+    ctx.strokeStyle = card.colorDef.hex;
+    ctx.lineWidth = Math.max(1.5, w * 0.025);
+  }
+  drawRoundRect(x, y, w, h, r); ctx.stroke(); clearGlow();
+
+  // Attacker outer ring
+  if (opts.isAttacker) {
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.007);
+    setGlow('#ffffff', 20 * pulse);
+    ctx.strokeStyle = `rgba(255,255,255,${0.4 + 0.6 * pulse})`;
+    ctx.lineWidth = w * 0.05;
+    drawRoundRect(x - 4, y - 4, w + 8, h + 8, r + 4); ctx.stroke(); clearGlow();
+  }
+
+  // Card name
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.font = `bold ${Math.max(8, w * 0.12)}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText(card.name, cx, y + h * 0.05);
+
+  // Ability label
+  if (card.ability) {
+    const abilityText = card.ability === 'charge' ? '⚡ Charge' : card.ability === 'taunt' ? '🛡 Taunt' : '💚 Heal +3';
+    ctx.fillStyle = 'rgba(255,255,255,0.80)';
+    ctx.font = `bold italic ${Math.max(6, w * 0.088)}px system-ui`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(abilityText, cx, y + h * 0.635);
+  }
+
+  // Mana badge (top-left, orange)
+  const bR = Math.max(9, w * 0.155);
+  const bx0 = x + bR * 0.85, by0 = y + bR * 0.85;
+  ctx.beginPath(); ctx.arc(bx0, by0, bR, 0, Math.PI*2);
+  ctx.fillStyle = '#e87800'; ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, bR * 0.18); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${bR * 1.1}px system-ui`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = p.fontSize * 0.1; ctx.lineJoin = 'round';
-  ctx.strokeText(p.text, p.x, p.y);
-  setGlow(p.glow, 14); ctx.fillStyle = p.color; ctx.fillText(p.text, p.x, p.y);
-  clearGlow(); ctx.restore();
+  ctx.fillText(card.manaCost, bx0, by0);
+
+  // DEF badge (bottom-left, blue square)
+  const statSz  = Math.max(16, w * 0.32);
+  const statPad = w * 0.05;
+  const statRad = statSz * 0.10;
+  const defBX = x + statPad, defBY = y + h - statSz - statPad;
+  ctx.fillStyle = '#1E90FF';
+  drawRoundRect(defBX, defBY, statSz, statSz, statRad); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, statSz * 0.08);
+  drawRoundRect(defBX, defBY, statSz, statSz, statRad); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${statSz * 0.58}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(card.defense, defBX + statSz * 0.5, defBY + statSz * 0.5);
+
+  // ATK badge (bottom-right, red square)
+  const atkBX = x + w - statSz - statPad, atkBY = y + h - statSz - statPad;
+  ctx.fillStyle = '#CC1111';
+  drawRoundRect(atkBX, atkBY, statSz, statSz, statRad); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, statSz * 0.08);
+  drawRoundRect(atkBX, atkBY, statSz, statSz, statRad); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${statSz * 0.58}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(card.attack, atkBX + statSz * 0.5, atkBY + statSz * 0.5);
+
+  // Level badge (top-right corner, stars)
+  if (card.level > 1) {
+    const stars    = '★'.repeat(card.level - 1);
+    const hue      = (performance.now() * 0.15) % 360;
+    const lvlColor = card.level >= 3 ? `hsl(${hue},100%,72%)` : '#FFD700';
+    setGlow(lvlColor, 16);
+    ctx.fillStyle = lvlColor;
+    ctx.font = `bold ${Math.max(7, bR * 1.05)}px system-ui`;
+    ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillText(stars, x + w - bR * 0.55, y + bR * 0.25);
+    clearGlow();
+  }
+
+  ctx.restore();
 }
 
-// ─── Background ───────────────────────────────────────────────────────────────
+function drawFaceDownCard(x, y, w, h) {
+  const r = w * 0.1;
+  ctx.save();
+  drawRoundRect(x, y, w, h, r);
+  ctx.fillStyle = '#1a1a2e'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1.5;
+  drawRoundRect(x, y, w, h, r); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 2; col++) {
+      ctx.fillRect(x + col*(w/2)+3, y + row*(h/3)+3, w/2-6, h/3-6);
+    }
+  }
+  ctx.restore();
+}
+
+// ─── Drawing: battlefield ─────────────────────────────────────────────────────
+function drawBattlefield() {
+  ['enemy', 'player'].forEach(side => {
+    for (let i = 0; i < MAX_SLOTS; i++) {
+      const r    = fieldSlotRect(side, i);
+      const card = side === 'player' ? playerField[i] : enemyField[i];
+
+      // Slot outline / drag-drop indicator
+      if (!card && side === 'player' && dragState && dragState.isDragging) {
+        const canDrop  = dragState.card.manaCost <= playerMana;
+        const isHover  = dragState.hoverSlot === i;
+        const dashOff  = (performance.now() * 0.07) % 22;
+        ctx.save();
+        ctx.setLineDash([8 * devicePixelRatio, 5 * devicePixelRatio]);
+        ctx.lineDashOffset = -dashOff;
+        if (isHover && canDrop) {
+          setGlow('#44ffdd', 28); ctx.strokeStyle = 'rgba(68,255,221,1)'; ctx.lineWidth = 3.5;
+        } else if (canDrop) {
+          setGlow('#44aaff', 12); ctx.strokeStyle = 'rgba(100,190,255,0.72)'; ctx.lineWidth = 2;
+        } else {
+          ctx.strokeStyle = 'rgba(255,80,80,0.42)'; ctx.lineWidth = 1.5;
+        }
+        drawRoundRect(r.x, r.y, r.w, r.h, r.w * 0.1); ctx.stroke();
+        clearGlow(); ctx.setLineDash([]); ctx.restore();
+        continue;
+      }
+
+      ctx.save();
+      ctx.setLineDash([4 * devicePixelRatio, 5 * devicePixelRatio]);
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      ctx.lineWidth = 1.5;
+      drawRoundRect(r.x, r.y, r.w, r.h, r.w * 0.1); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      if (!card) continue;
+
+      // Gold pulse on valid merge target
+      const selCard    = selectedFieldIdx !== null ? playerField[selectedFieldIdx] : null;
+      const isMergeTgt = side === 'player' && selCard && i !== selectedFieldIdx &&
+        card && card.id === selCard.id && card.level < MAX_LEVEL;
+      if (isMergeTgt) {
+        const pulse = 0.55 + 0.45 * Math.sin(performance.now() * 0.006);
+        setGlow('#FFD700', 30 * pulse);
+        ctx.strokeStyle = `rgba(255,215,0,${pulse})`;
+        ctx.lineWidth   = 3.5;
+        drawRoundRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6, r.w * 0.12); ctx.stroke();
+        clearGlow();
+      }
+
+      // Red glow on valid attack target
+      const isTarget = side === 'enemy' && selectedFieldIdx !== null && card;
+      if (isTarget) {
+        const hasTaunt = enemyField.some(c => c && c.ability === 'taunt');
+        const validTarget = !hasTaunt || card.ability === 'taunt';
+        if (validTarget) {
+          setGlow('#ff3333', 22);
+          ctx.strokeStyle = '#ff3333';
+          ctx.lineWidth = 3;
+          drawRoundRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6, r.w * 0.1); ctx.stroke();
+          clearGlow();
+        }
+      }
+
+      const isAttacker = side === 'player' && selectedFieldIdx === i;
+      const canAct     = side === 'player' && !card.hasAttacked && !card.summoningSickness && card.attack > 0;
+      const shouldDim  = side === 'player' && !canAct && selectedFieldIdx === null && !animLock;
+
+      drawCardShape(card, r.x, r.y, r.w, r.h, { selected: isAttacker, isAttacker, dim: shouldDim });
+
+      // Summoning sickness overlay
+      if (side === 'player' && card.summoningSickness) {
+        ctx.save();
+        drawRoundRect(r.x, r.y, r.w, r.h, r.w * 0.1);
+        ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fill();
+        ctx.fillStyle = 'rgba(200,200,200,0.55)';
+        ctx.font = `${Math.max(7, r.w * 0.1)}px system-ui`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('zZz', r.cx, r.cy + r.h * 0.25);
+        ctx.restore();
+      }
+    }
+  });
+}
+
+// ─── Drawing: hand ────────────────────────────────────────────────────────────
+function drawHand() {
+  const n = playerHand.length;
+
+  // ── Enemy hand (face-down fan, mirrored upward) ──────────────────────────
+  const eZ  = ZONE.enemyHand();
+  const fdW = Math.min(cardW() * 0.72, 62 * devicePixelRatio);
+  const fdH = fdW * 1.45;
+  const en  = enemyHand.length;
+  if (en > 0) {
+    const eMaxDeg = Math.min(20, Math.max(5, en * 3));
+    const eGap    = Math.min(fdW * 0.58, (canvas.width * 0.55 - fdW) / Math.max(1, en - 1));
+    const eTotalW = fdW + (en - 1) * eGap;
+    const eSx     = (canvas.width - eTotalW) * 0.5;
+    const ePivotDist = fdH * 3;
+    const ePivotY    = eZ.y + eZ.h * 0.5 - ePivotDist - fdH; // pivot above zone
+    for (let i = 0; i < en; i++) {
+      const a  = en > 1 ? ((i - (en - 1) / 2) / (en - 1)) * eMaxDeg * Math.PI / 180 : 0;
+      const cx = eSx + i * eGap + fdW * 0.5;
+      ctx.save();
+      ctx.translate(cx, ePivotY);
+      ctx.rotate(a);                          // mirrored — top of card faces down
+      drawFaceDownCard(-fdW * 0.5, ePivotDist, fdW, fdH);
+      ctx.restore();
+    }
+  }
+
+  // ── Player hand (fan upward) ──────────────────────────────────────────────
+  if (n === 0) return;
+  const p = handFanParams(n);
+
+  // Draw back-to-front so right-side cards appear on top
+  for (let i = 0; i < n; i++) {
+    if (dragState && dragState.isDragging && i === dragState.handIdx) continue;
+    const card   = playerHand[i];
+    const a      = handCardAngle(i, n, p);
+    const cx     = p.startX + i * p.gap + p.cw * 0.5;
+    const lifted = i === selectedHandIdx ? p.ch * 0.15 : 0;
+    const cantAfford = card.manaCost > playerMana;
+
+    ctx.save();
+    ctx.translate(cx, p.pivotY);  // pivot far below
+    ctx.rotate(a);
+    // Draw card with its top-left at (-cw/2, -pivotDist - ch - lift)
+    const cardTop = -(p.pivotDist + p.ch + lifted);
+    drawCardShape(card, -p.cw * 0.5, cardTop, p.cw, p.ch, {
+      selected:    i === selectedHandIdx,
+      dim:         cantAfford && i !== selectedHandIdx,
+    });
+    ctx.restore();
+  }
+}
+
+// ─── Drawing: HUD ─────────────────────────────────────────────────────────────
+function drawHUD() {
+  const fs = Math.max(10, canvas.width * 0.02);
+
+  // ── Top bar (enemy) ───────────────────────────────────────────────────────
+  const tZ = ZONE.topHud();
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, tZ.y, canvas.width, tZ.h);
+
+  // Enemy avatar
+  const avSz = tZ.h * 0.72;
+  const avX  = 10 * devicePixelRatio, avY = tZ.y + (tZ.h - avSz) * 0.5;
+  setGlow('#ff4444', 8);
+  ctx.fillStyle = '#2a0808';
+  drawRoundRect(avX, avY, avSz, avSz, avSz * 0.2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,100,100,0.85)';
+  ctx.font = `bold ${avSz * 0.55}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('👾', avX + avSz * 0.5, avY + avSz * 0.5);
+  clearGlow();
+
+  // Enemy HP bar
+  const eBarX = avX + avSz + 8 * devicePixelRatio;
+  const eBarW = Math.min(canvas.width * 0.28, 180 * devicePixelRatio);
+  const eBarH = tZ.h * 0.45;
+  const eBarY = tZ.y + (tZ.h - eBarH) * 0.5;
+  drawHealthBar(eBarX, eBarY, eBarW, eBarH, enemyHP / MAX_HP, '#ff4444', MAX_HP);
+
+  // Turn label (right)
+  const isEnemy = currentTurn === 'enemy';
+  ctx.fillStyle = isEnemy ? '#ffaa55' : '#aaffcc';
+  ctx.font = `bold ${fs}px system-ui`;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillText('TURN ' + turnNumber + (isEnemy ? '  (Enemy)' : ''), canvas.width - 14, tZ.y + tZ.h * 0.5);
+
+  // ── Bottom bar (player) ────────────────────────────────────────────────────
+  const bZ = ZONE.bottomHud();
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, bZ.y, canvas.width, bZ.h);
+
+  // Player avatar
+  const pAvSz = bZ.h * 0.72;
+  const pAvX  = 10 * devicePixelRatio, pAvY = bZ.y + (bZ.h - pAvSz) * 0.5;
+  setGlow('#22DD55', 8);
+  ctx.fillStyle = '#082208';
+  drawRoundRect(pAvX, pAvY, pAvSz, pAvSz, pAvSz * 0.2); ctx.fill();
+  ctx.font = `bold ${pAvSz * 0.55}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🧙', pAvX + pAvSz * 0.5, pAvY + pAvSz * 0.5);
+  clearGlow();
+
+  // Player HP bar
+  const pBarX = pAvX + pAvSz + 8 * devicePixelRatio;
+  const pBarW = Math.min(canvas.width * 0.26, 165 * devicePixelRatio);
+  const pBarH = bZ.h * 0.38;
+  const pBarY = bZ.y + bZ.h * 0.14;
+  drawHealthBar(pBarX, pBarY, pBarW, pBarH, playerHP / MAX_HP, '#22DD55', MAX_HP);
+
+  // Mana dots
+  const dotR  = Math.max(5, bZ.h * 0.16);
+  const dotGap = dotR * 2.6;
+  const manaY = bZ.y + bZ.h * 0.72;
+  for (let i = 0; i < playerMaxMana; i++) {
+    const mx = pBarX + i * dotGap + dotR;
+    ctx.beginPath(); ctx.arc(mx, manaY, dotR, 0, Math.PI * 2);
+    if (i < playerMana) {
+      setGlow('#44aaff', 8); ctx.fillStyle = '#1E90FF';
+    } else {
+      ctx.fillStyle = 'rgba(30,144,255,0.2)';
+    }
+    ctx.fill(); clearGlow();
+  }
+  const manaLabelX = pBarX + playerMaxMana * dotGap + dotR;
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.font = `${Math.max(8, fs * 0.8)}px system-ui`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(playerMana + '/' + playerMaxMana, manaLabelX, manaY);
+
+  // END TURN button
+  const etR    = endTurnRect();
+  const canEnd = currentTurn === 'player' && !animLock && !gameOver;
+  setGlow(canEnd ? '#3399ff' : 'transparent', canEnd ? 14 : 0);
+  ctx.fillStyle = canEnd ? '#1455a0' : '#222230';
+  drawRoundRect(etR.x, etR.y, etR.w, etR.h, etR.h * 0.3); ctx.fill();
+  ctx.strokeStyle = canEnd ? '#55aaff' : '#333344';
+  ctx.lineWidth = 2;
+  drawRoundRect(etR.x, etR.y, etR.w, etR.h, etR.h * 0.3); ctx.stroke();
+  clearGlow();
+  ctx.fillStyle = canEnd ? '#ffffff' : 'rgba(255,255,255,0.25)';
+  ctx.font = `bold ${Math.max(10, etR.h * 0.38)}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('END TURN', etR.cx, etR.cy);
+
+  // "Enemy thinking" overlay on bottom bar during enemy turn
+  if (currentTurn === 'enemy') {
+    ctx.fillStyle = 'rgba(255,140,60,0.75)';
+    ctx.font = `bold ${Math.max(9, fs * 0.85)}px system-ui`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Enemy is thinking…', canvas.width * 0.5, bZ.y + bZ.h * 0.5);
+  }
+
+  // Merge hint: shown when a card is selected that can merge
+  if (selectedFieldIdx !== null && currentTurn === 'player') {
+    const selCard = playerField[selectedFieldIdx];
+    const canMerge = selCard && selCard.level < MAX_LEVEL &&
+      (playerField.some((c, i) => c && i !== selectedFieldIdx && c.id === selCard.id) ||
+       playerHand.some(c => c && c.id === selCard.id));
+    if (canMerge) {
+      ctx.fillStyle = 'rgba(255,215,0,0.82)';
+      ctx.font = `bold ${Math.max(8, fs * 0.78)}px system-ui`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('★ Drop same card to MERGE & level up!', canvas.width * 0.5, bZ.y + bZ.h * 0.18);
+    }
+  }
+}
+
+// ─── Drawing: background ─────────────────────────────────────────────────────
 function drawBackground() {
-  ctx.fillStyle = '#0a0a0f';
+  ctx.fillStyle = '#09090f';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Stars only in the top (arena) half
+  // Stars only in battlefield area
+  const ef = ZONE.enemyField(), pf = ZONE.playerField();
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, 0, canvas.width, HALF());
+  ctx.rect(0, ef.y, canvas.width, pf.y + pf.h - ef.y);
   ctx.clip();
   drawStars();
   ctx.restore();
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, HALF()); ctx.lineTo(canvas.width, HALF()); ctx.stroke();
+  // Divider line
+  const divY = canvas.height * 0.487;
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(canvas.width * 0.04, divY);
+  ctx.lineTo(canvas.width * 0.96, divY);
+  ctx.stroke();
 
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  ctx.font = `${Math.max(11, canvas.width * 0.018)}px system-ui`;
+  // Zone labels
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.font = `${Math.max(9, canvas.width * 0.016)}px system-ui`;
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText('ARENA', 14, 12);
-  ctx.fillText('ABILITIES', 14, HALF() + 10);
+  ctx.fillText('ENEMY FIELD', 14 * devicePixelRatio, ef.y + 6);
+  ctx.fillText('YOUR FIELD',  14 * devicePixelRatio, pf.y + 6);
 }
 
-// ─── Color lerp ───────────────────────────────────────────────────────────────
-function lerpColor(a, b, t) {
-  const ah = parseInt(a.slice(1), 16);
-  const bh = parseInt(b.slice(1), 16);
-  const ar = (ah >> 16) & 0xff, ag = (ah >> 8) & 0xff, ab = ah & 0xff;
-  const br = (bh >> 16) & 0xff, bg = (bh >> 8) & 0xff, bb = bh & 0xff;
-  const rr = Math.round(ar + (br-ar)*t), rg = Math.round(ag + (bg-ag)*t), rb = Math.round(ab + (bb-ab)*t);
-  return '#' + ((1<<24)|(rr<<16)|(rg<<8)|rb).toString(16).slice(1);
-}
+// ─── Game over overlay ────────────────────────────────────────────────────────
+function drawGameOver() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
-// ─── Tween updates ────────────────────────────────────────────────────────────
-function updateTweens(dt) {
-  if (playerFlash) {
-    playerFlash.t += 0.025 * dt;
-    if (playerFlash.t >= 1) playerFlash = null;
+  if (gameOver === 'win') {
+    setGlow('#FFD700', 55);
+    ctx.fillStyle = '#FFD700';
+    ctx.font = `bold ${Math.max(30, canvas.width * 0.07)}px system-ui`;
+    ctx.fillText('VICTORY!', canvas.width * 0.5, canvas.height * 0.38);
+  } else {
+    setGlow('#ff4444', 55);
+    ctx.fillStyle = '#FF4444';
+    ctx.font = `bold ${Math.max(30, canvas.width * 0.07)}px system-ui`;
+    ctx.fillText('DEFEAT', canvas.width * 0.5, canvas.height * 0.38);
   }
-  if (enemyFlash) {
-    enemyFlash.t += 0.025 * dt;
-    if (enemyFlash.t >= 1) enemyFlash = null;
-  }
-  if (enemyImpact) {
-    enemyImpact.t += 0.022 * dt;
-    if (enemyImpact.t >= 1) {
-      enemyImpact = null;
-    } else if (enemyImpact.t > 0.05 && !enemyImpact.spawned) {
-      enemyImpact.spawned = true;
-      spawnImpact(enemyImpact.color);
-    }
-  }
-  if (playerImpact) {
-    playerImpact.t += 0.022 * dt;
-    if (playerImpact.t >= 1) {
-      playerImpact = null;
-    } else if (playerImpact.t > 0.05 && !playerImpact.spawned) {
-      playerImpact.spawned = true;
-      spawnPlayerImpact(playerImpact.color);
-    }
-  }
-}
+  clearGlow();
 
-// ─── Cooldown tick ────────────────────────────────────────────────────────────
-function updateCooldowns(dt) {
-  for (const id in cooldowns) {
-    if (cooldowns[id].remaining > 0)
-      cooldowns[id].remaining = Math.max(0, cooldowns[id].remaining - dt);
-  }
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = `${Math.max(13, canvas.width * 0.024)}px system-ui`;
+  ctx.fillText('Tap anywhere to play again', canvas.width * 0.5, canvas.height * 0.55);
+  ctx.restore();
 }
 
 // ─── Main loop ────────────────────────────────────────────────────────────────
@@ -1413,33 +1727,37 @@ function loop(ts) {
 
   // Shake
   if (shake.elapsed < shake.duration) shake.elapsed += dt;
-  const shakeProgress = Math.max(0, 1 - shake.elapsed / shake.duration);
-  const sx = shakeProgress > 0 ? (Math.random()-0.5) * shake.intensity * shakeProgress * 2 : 0;
-  const sy = shakeProgress > 0 ? (Math.random()-0.5) * shake.intensity * shakeProgress * 2 : 0;
-
-  // Hit-combo timer
-  if (comboTimer > 0) comboTimer = Math.max(0, comboTimer - dt);
+  const sp = Math.max(0, 1 - shake.elapsed / shake.duration);
+  const sx = sp > 0 ? (Math.random()-0.5) * shake.intensity * sp * 2 : 0;
+  const sy = sp > 0 ? (Math.random()-0.5) * shake.intensity * sp * 2 : 0;
 
   updateStars(dt);
   drawBackground();
 
-  // Arena — shakes on impact
   ctx.save();
   ctx.translate(sx, sy);
-  drawSquares();
+  drawBattlefield();
   updateTweens(dt);
   updateParticles(dt);
   drawParticles();
   ctx.restore();
 
-  // UI — no shake
-  updateCooldowns(dt);
-  drawButtons();
+  drawHand();
   drawHUD();
+
+  // Floating drag card — drawn on top of everything
+  if (dragState && dragState.isDragging) {
+    const cw = cardW(), ch = cardH();
+    ctx.save(); ctx.globalAlpha = 0.93;
+    drawCardShape(dragState.card, dragState.x - cw * 0.5, dragState.y - ch * 0.68, cw, ch, { selected: true });
+    ctx.restore();
+  }
 
   if (gameOver) drawGameOver();
 
   requestAnimationFrame(loop);
 }
 
+// ─── Start ────────────────────────────────────────────────────────────────────
+dealOpening();
 requestAnimationFrame(ts => { lastTime = ts; requestAnimationFrame(loop); });
