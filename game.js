@@ -185,12 +185,12 @@ function hitTestHandCard(px, py, idx, total) {
 }
 
 function endTurnRect() {
-  const z  = ZONE.bottomHud();
-  const bw = Math.min(canvas.width * 0.22, 130 * devicePixelRatio);
-  const bh = z.h * 0.62;
-  const x  = canvas.width - bw - 16 * devicePixelRatio;
-  const y  = z.y + (z.h - bh) * 0.5;
-  return { x, y, w: bw, h: bh, cx: x + bw * 0.5, cy: y + bh * 0.5 };
+  const divY = canvas.height * 0.487;
+  const bw   = Math.min(canvas.width * 0.22, 130 * devicePixelRatio);
+  const bh   = Math.min(canvas.height * 0.055, 36 * devicePixelRatio);
+  const x    = (canvas.width - bw) * 0.5;
+  const y    = divY - bh * 0.5;
+  return { x, y, w: bw, h: bh, cx: x + bw * 0.5, cy: divY };
 }
 
 function pointIn(px, py, r) {
@@ -1574,21 +1574,6 @@ function drawHUD() {
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(0, bZ.y, canvas.width, bZ.h);
 
-  // END TURN button
-  const etR    = endTurnRect();
-  const canEnd = currentTurn === 'player' && !animLock && !gameOver;
-  setGlow(canEnd ? '#3399ff' : 'transparent', canEnd ? 14 : 0);
-  ctx.fillStyle = canEnd ? '#1455a0' : '#222230';
-  drawRoundRect(etR.x, etR.y, etR.w, etR.h, etR.h * 0.3); ctx.fill();
-  ctx.strokeStyle = canEnd ? '#55aaff' : '#333344';
-  ctx.lineWidth = 2;
-  drawRoundRect(etR.x, etR.y, etR.w, etR.h, etR.h * 0.3); ctx.stroke();
-  clearGlow();
-  ctx.fillStyle = canEnd ? '#ffffff' : 'rgba(255,255,255,0.25)';
-  ctx.font = `bold ${Math.max(10, etR.h * 0.38)}px system-ui`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('END TURN', etR.cx, etR.cy);
-
   // "Enemy thinking" overlay on bottom bar during enemy turn
   if (currentTurn === 'enemy') {
     ctx.fillStyle = 'rgba(255,140,60,0.75)';
@@ -1626,14 +1611,34 @@ function drawBackground() {
   drawStars();
   ctx.restore();
 
-  // Divider line
+  // Divider line split around END TURN button
   const divY = canvas.height * 0.487;
-  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
-  ctx.lineWidth = 1.5;
+  const etR  = endTurnRect();
+  const gap  = 12 * devicePixelRatio;
+  ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+  ctx.lineWidth   = 1.5;
   ctx.beginPath();
   ctx.moveTo(canvas.width * 0.04, divY);
+  ctx.lineTo(etR.x - gap, divY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(etR.x + etR.w + gap, divY);
   ctx.lineTo(canvas.width * 0.96, divY);
   ctx.stroke();
+
+  // END TURN button (drawn here so cards render on top)
+  const canEnd = currentTurn === 'player' && !animLock && !gameOver;
+  setGlow(canEnd ? '#3399ff' : 'transparent', canEnd ? 14 : 0);
+  ctx.fillStyle = canEnd ? '#1455a0' : '#222230';
+  drawRoundRect(etR.x, etR.y, etR.w, etR.h, etR.h * 0.3); ctx.fill();
+  ctx.strokeStyle = canEnd ? '#55aaff' : '#333344';
+  ctx.lineWidth = 2;
+  drawRoundRect(etR.x, etR.y, etR.w, etR.h, etR.h * 0.3); ctx.stroke();
+  clearGlow();
+  ctx.fillStyle = canEnd ? '#ffffff' : 'rgba(255,255,255,0.25)';
+  ctx.font = `bold ${Math.max(10, etR.h * 0.38)}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('END TURN', etR.cx, etR.cy);
 
   // Zone labels
   const labelFs = Math.max(9, canvas.width * 0.016);
