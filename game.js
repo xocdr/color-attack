@@ -116,11 +116,11 @@ const ZONE = {
   enemyHand:   () => ({ y: canvas.height * 0.07,     h: canvas.height * 0.10 }),
   enemyField:  () => ({ y: canvas.height * 0.17,     h: canvas.height * 0.28 }),
   playerField: () => ({ y: canvas.height * 0.50,     h: canvas.height * 0.28 }),
-  playerHand:  () => ({ y: canvas.height * 0.78,     h: canvas.height * 0.14 }),
+  playerHand:  () => ({ y: canvas.height * 0.73,     h: canvas.height * 0.14 }),
   bottomHud:   () => ({ y: canvas.height * 0.92,     h: canvas.height * 0.08 }),
 };
 
-function cardW()      { return Math.min(canvas.width * 0.12, 100 * devicePixelRatio); }
+function cardW()      { return Math.min(canvas.width * 0.14, 115 * devicePixelRatio); }
 function cardH()      { return cardW() * 1.45; }
 function fieldCardW() { return Math.min(canvas.width * 0.15, 120 * devicePixelRatio); }
 function fieldCardH() { return fieldCardW() * 1.45; }
@@ -604,10 +604,18 @@ function handleClickLogic(pos) {
   if (selectedFieldIdx !== null) {
     for (let i = 0; i < MAX_SLOTS; i++) {
       const r = fieldSlotRect('enemy', i);
-      if (pointIn(pos.x, pos.y, r) && enemyField[i]) {
-        resolveAttack(true, selectedFieldIdx, false, i);
-        selectedFieldIdx = null;
-        return;
+      if (pointIn(pos.x, pos.y, r)) {
+        if (enemyField[i]) {
+          resolveAttack(true, selectedFieldIdx, false, i);
+          selectedFieldIdx = null;
+          return;
+        }
+        // Click empty enemy slot = direct face attack when field is clear
+        if (!enemyField.some(c => c && c.ability === 'taunt')) {
+          resolveAttack(true, selectedFieldIdx, true, -1);
+          selectedFieldIdx = null;
+          return;
+        }
       }
     }
     const tZ = ZONE.topHud();
@@ -1554,26 +1562,7 @@ function drawHUD() {
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(0, tZ.y, canvas.width, tZ.h);
 
-  // Enemy avatar
-  const avSz = tZ.h * 0.72;
-  const avX  = 10 * devicePixelRatio, avY = tZ.y + (tZ.h - avSz) * 0.5;
-  setGlow('#ff4444', 8);
-  ctx.fillStyle = '#2a0808';
-  drawRoundRect(avX, avY, avSz, avSz, avSz * 0.2); ctx.fill();
-  ctx.fillStyle = 'rgba(255,100,100,0.85)';
-  ctx.font = `bold ${avSz * 0.55}px system-ui`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('👾', avX + avSz * 0.5, avY + avSz * 0.5);
-  clearGlow();
-
-  // Enemy HP bar
-  const eBarX = avX + avSz + 8 * devicePixelRatio;
-  const eBarW = Math.min(canvas.width * 0.28, 180 * devicePixelRatio);
-  const eBarH = tZ.h * 0.45;
-  const eBarY = tZ.y + (tZ.h - eBarH) * 0.5;
-  drawHealthBar(eBarX, eBarY, eBarW, eBarH, enemyHP / MAX_HP, '#ff4444', MAX_HP);
-
-  // Turn label (right)
+  // Turn label (right of top bar)
   const isEnemy = currentTurn === 'enemy';
   ctx.fillStyle = isEnemy ? '#ffaa55' : '#aaffcc';
   ctx.font = `bold ${fs}px system-ui`;
@@ -1584,44 +1573,6 @@ function drawHUD() {
   const bZ = ZONE.bottomHud();
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(0, bZ.y, canvas.width, bZ.h);
-
-  // Player avatar
-  const pAvSz = bZ.h * 0.72;
-  const pAvX  = 10 * devicePixelRatio, pAvY = bZ.y + (bZ.h - pAvSz) * 0.5;
-  setGlow('#22DD55', 8);
-  ctx.fillStyle = '#082208';
-  drawRoundRect(pAvX, pAvY, pAvSz, pAvSz, pAvSz * 0.2); ctx.fill();
-  ctx.font = `bold ${pAvSz * 0.55}px system-ui`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('🧙', pAvX + pAvSz * 0.5, pAvY + pAvSz * 0.5);
-  clearGlow();
-
-  // Player HP bar
-  const pBarX = pAvX + pAvSz + 8 * devicePixelRatio;
-  const pBarW = Math.min(canvas.width * 0.26, 165 * devicePixelRatio);
-  const pBarH = bZ.h * 0.38;
-  const pBarY = bZ.y + bZ.h * 0.14;
-  drawHealthBar(pBarX, pBarY, pBarW, pBarH, playerHP / MAX_HP, '#22DD55', MAX_HP);
-
-  // Mana dots
-  const dotR  = Math.max(5, bZ.h * 0.16);
-  const dotGap = dotR * 2.6;
-  const manaY = bZ.y + bZ.h * 0.72;
-  for (let i = 0; i < playerMaxMana; i++) {
-    const mx = pBarX + i * dotGap + dotR;
-    ctx.beginPath(); ctx.arc(mx, manaY, dotR, 0, Math.PI * 2);
-    if (i < playerMana) {
-      setGlow('#44aaff', 8); ctx.fillStyle = '#1E90FF';
-    } else {
-      ctx.fillStyle = 'rgba(30,144,255,0.2)';
-    }
-    ctx.fill(); clearGlow();
-  }
-  const manaLabelX = pBarX + playerMaxMana * dotGap + dotR;
-  ctx.fillStyle = 'rgba(255,255,255,0.45)';
-  ctx.font = `${Math.max(8, fs * 0.8)}px system-ui`;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(playerMana + '/' + playerMaxMana, manaLabelX, manaY);
 
   // END TURN button
   const etR    = endTurnRect();
@@ -1685,11 +1636,69 @@ function drawBackground() {
   ctx.stroke();
 
   // Zone labels
+  const labelFs = Math.max(9, canvas.width * 0.016);
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  ctx.font = `${Math.max(9, canvas.width * 0.016)}px system-ui`;
+  ctx.font = `${labelFs}px system-ui`;
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillText('ENEMY FIELD', 14 * devicePixelRatio, ef.y + 6);
   ctx.fillText('YOUR FIELD',  14 * devicePixelRatio, pf.y + 6);
+
+  // ── Enemy avatar + HP (avatar left, bar to its right) ────────────────────
+  const avPad = 14 * devicePixelRatio;
+  const avSz  = Math.min(ef.h * 0.42, 64 * devicePixelRatio);
+  const avY   = ef.y + labelFs + 22 * devicePixelRatio;
+  const avX   = avPad;
+  setGlow('#ff4444', 12);
+  ctx.fillStyle = '#2a0808';
+  drawRoundRect(avX, avY, avSz, avSz, avSz * 0.2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,100,100,0.9)';
+  ctx.font = `bold ${avSz * 0.6}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('👾', avX + avSz * 0.5, avY + avSz * 0.5);
+  clearGlow();
+  const eBarGap = 10 * devicePixelRatio;
+  const eBarX   = avX + avSz + eBarGap;
+  const eBarW   = Math.min(canvas.width * 0.22, 150 * devicePixelRatio);
+  const eBarH   = Math.max(10, avSz * 0.26);
+  const eBarY   = avY + (avSz - eBarH) * 0.5;
+  drawHealthBar(eBarX, eBarY, eBarW, eBarH, enemyHP / MAX_HP, '#ff4444', MAX_HP);
+
+  // ── Player avatar + HP + mana (avatar left, bar+mana to its right) ────────
+  const pAvSz  = Math.min(pf.h * 0.42, 64 * devicePixelRatio);
+  const pAvY   = pf.y + labelFs + 22 * devicePixelRatio;
+  const pAvX   = avPad;
+  setGlow('#22DD55', 12);
+  ctx.fillStyle = '#082208';
+  drawRoundRect(pAvX, pAvY, pAvSz, pAvSz, pAvSz * 0.2); ctx.fill();
+  ctx.font = `bold ${pAvSz * 0.6}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🧙', pAvX + pAvSz * 0.5, pAvY + pAvSz * 0.5);
+  clearGlow();
+  const pBarGap = 10 * devicePixelRatio;
+  const pBarX   = pAvX + pAvSz + pBarGap;
+  const pBarW   = Math.min(canvas.width * 0.22, 150 * devicePixelRatio);
+  const pBarH   = Math.max(10, pAvSz * 0.26);
+  const pBarY   = pAvY + pAvSz * 0.18;
+  drawHealthBar(pBarX, pBarY, pBarW, pBarH, playerHP / MAX_HP, '#22DD55', MAX_HP);
+  // Mana dots below HP bar, aligned to bar left
+  const dotR   = Math.max(4, pBarH * 0.5);
+  const dotGap = dotR * 2.6;
+  const manaY  = pBarY + pBarH + dotR + 5 * devicePixelRatio;
+  for (let i = 0; i < playerMaxMana; i++) {
+    const mx = pBarX + dotR + i * dotGap;
+    ctx.beginPath(); ctx.arc(mx, manaY, dotR, 0, Math.PI * 2);
+    if (i < playerMana) {
+      setGlow('#44aaff', 8); ctx.fillStyle = '#1E90FF';
+    } else {
+      ctx.fillStyle = 'rgba(30,144,255,0.2)';
+    }
+    ctx.fill(); clearGlow();
+  }
+  const manaLabelX = pBarX + playerMaxMana * dotGap + dotR * 1.6;
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.font = `${Math.max(8, dotR * 1.1)}px system-ui`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(playerMana + '/' + playerMaxMana, manaLabelX, manaY);
 }
 
 // ─── Game over overlay ────────────────────────────────────────────────────────
