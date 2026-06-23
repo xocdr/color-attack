@@ -188,7 +188,7 @@ function endTurnRect() {
   const divY = canvas.height * 0.487;
   const bw   = Math.min(canvas.width * 0.22, 130 * devicePixelRatio);
   const bh   = Math.min(canvas.height * 0.055, 36 * devicePixelRatio);
-  const x    = (canvas.width - bw) * 0.5;
+  const x    = canvas.width * 0.96 - bw;
   const y    = divY - bh * 0.5;
   return { x, y, w: bw, h: bh, cx: x + bw * 0.5, cy: divY };
 }
@@ -1562,37 +1562,41 @@ function drawHUD() {
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(0, tZ.y, canvas.width, tZ.h);
 
-  // Turn label (right of top bar)
-  const isEnemy = currentTurn === 'enemy';
-  ctx.fillStyle = isEnemy ? '#ffaa55' : '#aaffcc';
-  ctx.font = `bold ${fs}px system-ui`;
-  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-  ctx.fillText('TURN ' + turnNumber + (isEnemy ? '  (Enemy)' : ''), canvas.width - 14, tZ.y + tZ.h * 0.5);
+  // ── Right-side info panel (below END TURN button) ─────────────────────────
+  const etR      = endTurnRect();
+  const panelX   = canvas.width * 0.96;   // right-align to same edge as button
+  const lineH    = Math.max(16, fs * 1.1);
+  let   lineY    = etR.y + etR.h + lineH * 0.9;
 
-  // ── Bottom bar (player) ────────────────────────────────────────────────────
-  const bZ = ZONE.bottomHud();
-  ctx.fillStyle = 'rgba(0,0,0,0.6)';
-  ctx.fillRect(0, bZ.y, canvas.width, bZ.h);
+  const isEnemy  = currentTurn === 'enemy';
 
-  // "Enemy thinking" overlay on bottom bar during enemy turn
+  // Turn label
+  ctx.fillStyle  = isEnemy ? '#ffaa55' : '#aaffcc';
+  ctx.font       = `bold ${fs}px system-ui`;
+  ctx.textAlign  = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillText('TURN ' + turnNumber + (isEnemy ? '  ·  Enemy' : '  ·  You'), panelX, lineY);
+  lineY += lineH * 1.2;
+
+  // "Enemy thinking" indicator
   if (currentTurn === 'enemy') {
-    ctx.fillStyle = 'rgba(255,140,60,0.75)';
-    ctx.font = `bold ${Math.max(9, fs * 0.85)}px system-ui`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('Enemy is thinking…', canvas.width * 0.5, bZ.y + bZ.h * 0.5);
+    ctx.fillStyle = 'rgba(255,140,60,0.9)';
+    ctx.font      = `bold ${Math.max(9, fs * 0.82)}px system-ui`;
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText('Enemy is thinking…', panelX, lineY);
+    lineY += lineH * 1.2;
   }
 
-  // Merge hint: shown when a card is selected that can merge
+  // Merge hint
   if (selectedFieldIdx !== null && currentTurn === 'player') {
     const selCard = playerField[selectedFieldIdx];
     const canMerge = selCard && selCard.level < MAX_LEVEL &&
       (playerField.some((c, i) => c && i !== selectedFieldIdx && c.id === selCard.id) ||
        playerHand.some(c => c && c.id === selCard.id));
     if (canMerge) {
-      ctx.fillStyle = 'rgba(255,215,0,0.82)';
-      ctx.font = `bold ${Math.max(8, fs * 0.78)}px system-ui`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('★ Drop same card to MERGE & level up!', canvas.width * 0.5, bZ.y + bZ.h * 0.18);
+      ctx.fillStyle = 'rgba(255,215,0,0.9)';
+      ctx.font      = `bold ${Math.max(8, fs * 0.75)}px system-ui`;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText('★ Drop same card to MERGE!', panelX, lineY);
     }
   }
 }
