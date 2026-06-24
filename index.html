@@ -5,25 +5,590 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>Ascend</title>
-  <link rel="stylesheet" href="style.css">
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "./node_modules/three/build/three.module.min.js",
-      "three/addons/": "./node_modules/three/examples/jsm/"
+  <title>Ascend — Access</title>
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
-  }
-  </script>
+
+    :root {
+      --bg:        #0a0a0f;
+      --panel:     #0d0d1c;
+      --panel-alt: #111124;
+      --border:    #1e1e3a;
+      --cyan:      #00e5ff;
+      --cyan-dim:  #00b8cc;
+      --red:       #ff2d55;
+      --text:      #e8eaf0;
+      --muted:     #5a6278;
+      --label:     #8892a4;
+      --grid:      rgba(0, 229, 255, 0.04);
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* ── Background grid ── */
+    .bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 48px 48px;
+      animation: grid-drift 20s linear infinite;
+    }
+
+    @keyframes grid-drift {
+      from { background-position: 0 0; }
+      to   { background-position: 48px 48px; }
+    }
+
+    /* Radial vignette over the grid */
+    .bg::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 70% 70% at 50% 50%, transparent 0%, var(--bg) 100%);
+    }
+
+    /* ── Glow orbs ── */
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      z-index: 0;
+      pointer-events: none;
+    }
+    .orb-cyan {
+      width: 400px; height: 400px;
+      background: rgba(0, 229, 255, 0.07);
+      top: -100px; left: -100px;
+      animation: float-a 12s ease-in-out infinite alternate;
+    }
+    .orb-red {
+      width: 300px; height: 300px;
+      background: rgba(255, 45, 85, 0.06);
+      bottom: -80px; right: -80px;
+      animation: float-b 15s ease-in-out infinite alternate;
+    }
+
+    @keyframes float-a {
+      from { transform: translate(0, 0); }
+      to   { transform: translate(60px, 40px); }
+    }
+    @keyframes float-b {
+      from { transform: translate(0, 0); }
+      to   { transform: translate(-40px, -60px); }
+    }
+
+    /* ── Main panel ── */
+    .panel-wrap {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .panel {
+      width: 100%;
+      max-width: 400px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      position: relative;
+      animation: border-glow 3s ease-in-out infinite alternate;
+    }
+
+    @keyframes border-glow {
+      from { box-shadow: 0 0 0 0 rgba(0,229,255,0), 0 24px 64px rgba(0,0,0,0.6); }
+      to   { box-shadow: 0 0 24px 2px rgba(0,229,255,0.12), 0 24px 64px rgba(0,0,0,0.6); }
+    }
+
+    /* Corner brackets */
+    .panel::before,
+    .panel::after {
+      content: '';
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-color: var(--cyan);
+      border-style: solid;
+    }
+    .panel::before {
+      top: -1px; left: -1px;
+      border-width: 2px 0 0 2px;
+    }
+    .panel::after {
+      bottom: -1px; right: -1px;
+      border-width: 0 2px 2px 0;
+    }
+
+    /* ── Panel header ── */
+    .panel-header {
+      padding: 28px 32px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .eyebrow {
+      font-family: 'Courier New', 'Lucida Console', monospace;
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .eyebrow::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 4px;
+      background: var(--cyan);
+      animation: blink 1.2s step-end infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    .panel-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      text-wrap: balance;
+      line-height: 1.2;
+    }
+
+    .panel-title span {
+      color: var(--cyan);
+    }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 14px 16px;
+      background: none;
+      border: none;
+      font-family: 'Courier New', 'Lucida Console', monospace;
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      cursor: pointer;
+      transition: color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    .tab-btn.active {
+      color: var(--cyan);
+      background: rgba(0, 229, 255, 0.04);
+    }
+
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0; right: 0;
+      height: 2px;
+      background: var(--cyan);
+    }
+
+    .tab-btn:hover:not(.active) {
+      color: var(--label);
+      background: rgba(255,255,255,0.02);
+    }
+
+    /* ── Form body ── */
+    .panel-body {
+      padding: 28px 32px 32px;
+    }
+
+    .form-pane {
+      display: none;
+    }
+    .form-pane.active {
+      display: block;
+    }
+
+    .field {
+      margin-bottom: 20px;
+    }
+
+    .field-label {
+      display: block;
+      font-family: 'Courier New', 'Lucida Console', monospace;
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--label);
+      margin-bottom: 8px;
+    }
+
+    .field-input {
+      width: 100%;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      padding: 11px 14px;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+      caret-color: var(--cyan);
+      border-radius: 0;
+      -webkit-appearance: none;
+    }
+
+    .field-input::placeholder {
+      color: var(--muted);
+    }
+
+    .field-input:focus {
+      border-color: var(--cyan-dim);
+      background: rgba(0, 229, 255, 0.04);
+      box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.08);
+    }
+
+    .field-input:focus-visible {
+      outline: none;
+    }
+
+    /* ── Password field wrapper ── */
+    .field-pw {
+      position: relative;
+    }
+
+    .field-pw .field-input {
+      padding-right: 44px;
+    }
+
+    .pw-toggle {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
+      transition: color 0.2s;
+    }
+
+    .pw-toggle:hover { color: var(--label); }
+
+    /* ── Strength bar ── */
+    .strength-wrap {
+      margin-top: 6px;
+      height: 2px;
+      background: var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .strength-bar {
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s, background 0.3s;
+    }
+
+    /* ── Primary button ── */
+    .btn-primary {
+      width: 100%;
+      padding: 13px 16px;
+      background: var(--cyan);
+      color: #000;
+      font-family: 'Courier New', 'Lucida Console', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+      margin-top: 8px;
+      border-radius: 0;
+    }
+
+    .btn-primary:hover {
+      background: #33ecff;
+      box-shadow: 0 0 20px rgba(0, 229, 255, 0.35);
+    }
+
+    .btn-primary:active {
+      transform: scale(0.99);
+    }
+
+    .btn-primary:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 3px;
+    }
+
+    /* ── Error / hint ── */
+    .msg {
+      font-family: 'Courier New', 'Lucida Console', monospace;
+      font-size: 11px;
+      margin-top: 14px;
+      min-height: 16px;
+      letter-spacing: 0.05em;
+    }
+
+    .msg.error { color: var(--red); }
+    .msg.success { color: var(--cyan); }
+
+    /* ── Footer ── */
+    .panel-footer {
+      padding: 16px 32px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .footer-tag {
+      font-family: 'Courier New', 'Lucida Console', monospace;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .footer-version {
+      font-family: 'Courier New', 'Lucida Console', monospace;
+      font-size: 10px;
+      color: var(--border);
+    }
+
+    /* ── Divider ── */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 20px 0;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .bg, .orb-cyan, .orb-red, .panel { animation: none; }
+    }
+  </style>
 </head>
 <body>
-  <div id="game-container">
-    <canvas id="bgCanvas"></canvas>
-    <canvas id="gameCanvas"></canvas>
-    <canvas id="charCanvas"></canvas>
+
+  <div class="bg"></div>
+  <div class="orb orb-cyan"></div>
+  <div class="orb orb-red"></div>
+
+  <div class="panel-wrap">
+    <div class="panel" role="main">
+
+      <div class="panel-header">
+        <div class="eyebrow">System Access</div>
+        <h1 class="panel-title">Color <span>Attack</span></h1>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" id="tab-login" role="tab" aria-selected="true" aria-controls="pane-login" onclick="switchTab('login')">Login</button>
+        <button class="tab-btn"        id="tab-register" role="tab" aria-selected="false" aria-controls="pane-register" onclick="switchTab('register')">Register</button>
+      </div>
+
+      <div class="panel-body">
+
+        <!-- LOGIN -->
+        <form class="form-pane active" id="pane-login" role="tabpanel" aria-labelledby="tab-login" onsubmit="handleLogin(event)" novalidate>
+          <div class="field">
+            <label class="field-label" for="login-name">Username</label>
+            <input class="field-input" id="login-name" type="text" placeholder="Enter username" autocomplete="username" spellcheck="false">
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="login-pw">Password</label>
+            <div class="field-pw">
+              <input class="field-input" id="login-pw" type="password" placeholder="Enter password" autocomplete="current-password">
+              <button type="button" class="pw-toggle" aria-label="Show password" onclick="togglePw('login-pw', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <button class="btn-primary" type="submit">Authenticate</button>
+          <div class="msg" id="login-msg" aria-live="polite"></div>
+        </form>
+
+        <!-- REGISTER -->
+        <form class="form-pane" id="pane-register" role="tabpanel" aria-labelledby="tab-register" onsubmit="handleRegister(event)" novalidate>
+          <div class="field">
+            <label class="field-label" for="reg-name">Username</label>
+            <input class="field-input" id="reg-name" type="text" placeholder="Choose a callsign" autocomplete="username" spellcheck="false" oninput="validateName()">
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="reg-pw">Password</label>
+            <div class="field-pw">
+              <input class="field-input" id="reg-pw" type="password" placeholder="Create password" autocomplete="new-password" oninput="updateStrength()">
+              <button type="button" class="pw-toggle" aria-label="Show password" onclick="togglePw('reg-pw', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+            <div class="strength-wrap" aria-hidden="true"><div class="strength-bar" id="strength-bar"></div></div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="reg-confirm">Confirm Password</label>
+            <div class="field-pw">
+              <input class="field-input" id="reg-confirm" type="password" placeholder="Repeat password" autocomplete="new-password">
+              <button type="button" class="pw-toggle" aria-label="Show password" onclick="togglePw('reg-confirm', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <button class="btn-primary" type="submit">Create Account</button>
+          <div class="msg" id="register-msg" aria-live="polite"></div>
+        </form>
+
+      </div>
+
+      <div class="panel-footer">
+        <span class="footer-tag">Ascend</span>
+        <span class="footer-version">v0.1.0</span>
+      </div>
+
+    </div>
   </div>
-  <script type="module" src="threejs-bg.js"></script>
-  <script type="module" src="threejs-chars.js"></script>
-  <script src="game.js"></script>
+
+  <script>
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.toggle('active', b.id === 'tab-' + tab);
+        b.setAttribute('aria-selected', b.id === 'tab-' + tab ? 'true' : 'false');
+      });
+      document.querySelectorAll('.form-pane').forEach(p => {
+        p.classList.toggle('active', p.id === 'pane-' + tab);
+      });
+      clearMsgs();
+    }
+
+    function clearMsgs() {
+      document.getElementById('login-msg').textContent = '';
+      document.getElementById('register-msg').textContent = '';
+      document.getElementById('login-msg').className = 'msg';
+      document.getElementById('register-msg').className = 'msg';
+    }
+
+    function setMsg(id, text, type) {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.className = 'msg ' + type;
+    }
+
+    function togglePw(inputId, btn) {
+      const input = document.getElementById(inputId);
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+    }
+
+    function updateStrength() {
+      const pw = document.getElementById('reg-pw').value;
+      const bar = document.getElementById('strength-bar');
+      let score = 0;
+      if (pw.length >= 8)  score++;
+      if (/[A-Z]/.test(pw)) score++;
+      if (/[0-9]/.test(pw)) score++;
+      if (/[^A-Za-z0-9]/.test(pw)) score++;
+      const pct = (score / 4) * 100;
+      const colors = ['#ff2d55', '#ff6b35', '#ffd700', '#00e5ff'];
+      bar.style.width = pct + '%';
+      bar.style.background = score > 0 ? colors[score - 1] : 'transparent';
+    }
+
+    function validateName() {
+      /* Reserved for real validation hook */
+    }
+
+    function handleLogin(e) {
+      e.preventDefault();
+      const name = document.getElementById('login-name').value.trim();
+      const pw   = document.getElementById('login-pw').value;
+
+      if (!name || !pw) {
+        setMsg('login-msg', '> All fields required.', 'error');
+        return;
+      }
+
+      /* ── Replace with real auth call ── */
+      const users = JSON.parse(localStorage.getItem('ca_users') || '{}');
+      if (!users[name] || users[name] !== pw) {
+        setMsg('login-msg', '> Invalid credentials.', 'error');
+        return;
+      }
+
+      localStorage.setItem('ca_last_user', name);
+      sessionStorage.setItem('ca_user', name);
+      setMsg('login-msg', '> Access granted. Loading...', 'success');
+      setTimeout(() => { window.location.href = 'lobby.html'; }, 900);
+    }
+
+    function handleRegister(e) {
+      e.preventDefault();
+      const name    = document.getElementById('reg-name').value.trim();
+      const pw      = document.getElementById('reg-pw').value;
+      const confirm = document.getElementById('reg-confirm').value;
+
+      if (!name || !pw || !confirm) {
+        setMsg('register-msg', '> All fields required.', 'error');
+        return;
+      }
+      if (name.length < 3) {
+        setMsg('register-msg', '> Callsign must be 3+ characters.', 'error');
+        return;
+      }
+      if (pw.length < 6) {
+        setMsg('register-msg', '> Password must be 6+ characters.', 'error');
+        return;
+      }
+      if (pw !== confirm) {
+        setMsg('register-msg', '> Passwords do not match.', 'error');
+        return;
+      }
+
+      /* ── Replace with real registration call ── */
+      const users = JSON.parse(localStorage.getItem('ca_users') || '{}');
+      if (users[name]) {
+        setMsg('register-msg', '> Callsign already taken.', 'error');
+        return;
+      }
+      users[name] = pw;
+      localStorage.setItem('ca_users', JSON.stringify(users));
+
+      setMsg('register-msg', '> Account created. Redirecting...', 'success');
+      setTimeout(() => {
+        switchTab('login');
+        document.getElementById('login-name').value = name;
+      }, 900);
+    }
+  </script>
 </body>
 </html>
