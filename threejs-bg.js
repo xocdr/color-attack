@@ -135,7 +135,7 @@ scene.add(nebula);
 // requestAnimationFrame and the browser interleaves them each frame. There is
 // no shared mutable state, so they cannot interfere with each other.
 
-const BASE_SPEED = 2.5; // world units advanced per frame at 60 fps
+const BASE_SPEED = 0.6; // world units advanced per frame at 60 fps
 let lastTs = 0;
 
 function animate(ts) {
@@ -170,8 +170,8 @@ function animate(ts) {
   nebulaGeo.attributes.position.needsUpdate = true;
 
   // Gentle Y rotation gives a subtle drift sensation
-  stars.rotation.y  += 0.00015 * (dt / 16.67);
-  nebula.rotation.y += 0.00010 * (dt / 16.67);
+  stars.rotation.y  += 0.00004 * (dt / 16.67);
+  nebula.rotation.y += 0.00002 * (dt / 16.67);
 
   // renderer.render(scene, camera) — draw everything in the scene to bgCanvas
   renderer.render(scene, camera);
