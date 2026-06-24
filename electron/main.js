@@ -6,7 +6,7 @@ function createWindow() {
     width: 800,
     height: 600,
     resizable: true,
-    title: 'Color Attack Demo',
+    title: 'Ascend',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

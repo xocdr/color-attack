@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Ascend — Leaderboard</title>
+  <script>if(!localStorage.getItem('ca_last_user'))window.location.replace('login.html');</script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:       #0b1318;
+      --teal:     #1a2e38;
+      --teal-mid: #1f3a47;
+      --cyan:     #4dd9ec;
+      --cyan-dim: rgba(77,217,236,0.15);
+      --gold:     #c8a84b;
+      --gold-dim: rgba(200,168,75,0.18);
+      --text:     #d4dfe6;
+      --muted:    #5a7080;
+      --border:   rgba(77,217,236,0.12);
+      --panel:    rgba(11,19,24,0.88);
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: var(--text);
+    }
+
+    .bg {
+      position: fixed; inset: 0; z-index: 0;
+      background: url('src/bg/battle-bg.jpg') center / cover no-repeat;
+    }
+    .bg::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(to bottom,
+        rgba(11,19,24,0.65) 0%,
+        rgba(11,19,24,0.42) 40%,
+        rgba(11,19,24,0.80) 100%);
+    }
+
+    .shell {
+      position: relative; z-index: 1;
+      width: 100vw; height: 100vh;
+      display: flex; flex-direction: column;
+    }
+
+    /* ══ NAV ══ */
+    .nav {
+      display: flex; align-items: center;
+      padding: 0 28px; height: 52px;
+      background: rgba(11,19,24,0.82);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      flex-shrink: 0;
+    }
+    .nav-logo {
+      font-family: 'Courier New', monospace;
+      font-size: 13px; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--cyan); margin-right: 20px;
+    }
+    .nav-links { display: flex; gap: 2px; flex: 1; }
+    .nav-link {
+      padding: 6px 18px;
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--muted); text-decoration: none;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .nav-link:hover { color: var(--text); }
+    .nav-link.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+    .nav-user { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .nav-avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--teal-mid), var(--cyan-dim));
+      border: 1px solid var(--cyan);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: var(--cyan);
+    }
+    .nav-username { font-size: 12px; font-weight: 600; }
+
+    /* ══ MAIN LAYOUT ══ */
+    .main {
+      flex: 1;
+      display: flex;
+      gap: 20px;
+      padding: 20px 24px;
+      overflow: hidden;
+    }
+
+    /* Left: leaderboard table */
+    .lb-panel {
+      flex: 1;
+      display: flex; flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .panel-title {
+      font-family: 'Courier New', monospace;
+      font-size: 11px; letter-spacing: 0.18em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .season-badge {
+      font-family: 'Courier New', monospace;
+      font-size: 10px; letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gold);
+      background: rgba(200,168,75,0.1);
+      border: 1px solid rgba(200,168,75,0.3);
+      padding: 3px 10px; border-radius: 20px;
+    }
+
+    /* Filter tabs */
+    .filter-tabs {
+      display: flex; gap: 4px;
+    }
+    .tab {
+      padding: 5px 14px;
+      font-size: 10px; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--muted);
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(77,217,236,0.1);
+      border-radius: 3px; cursor: pointer;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+    }
+    .tab:hover { color: var(--text); border-color: rgba(77,217,236,0.25); }
+    .tab.active {
+      color: var(--cyan);
+      background: var(--cyan-dim);
+      border-color: rgba(77,217,236,0.35);
+    }
+
+    /* Table */
+    .lb-table-wrap {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(77,217,236,0.2) transparent;
+    }
+    .lb-table-wrap::-webkit-scrollbar { width: 4px; }
+    .lb-table-wrap::-webkit-scrollbar-thumb {
+      background: rgba(77,217,236,0.2); border-radius: 2px;
+    }
+
+    .lb-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .lb-table thead th {
+      font-family: 'Courier New', monospace;
+      font-size: 9px; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--muted);
+      text-align: left; padding: 0 12px 10px;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0;
+      background: rgba(11,19,24,0.7);
+      backdrop-filter: blur(6px);
+    }
+    .lb-table thead th.right { text-align: right; }
+
+    .lb-table tbody tr {
+      border-bottom: 1px solid rgba(77,217,236,0.05);
+      transition: background 0.12s;
+      cursor: default;
+    }
+    .lb-table tbody tr:hover {
+      background: rgba(77,217,236,0.04);
+    }
+    .lb-table tbody tr.me {
+      background: rgba(200,168,75,0.07);
+      border-bottom-color: rgba(200,168,75,0.12);
+    }
+    .lb-table tbody tr.me:hover {
+      background: rgba(200,168,75,0.1);
+    }
+
+    .lb-table td {
+      padding: 10px 12px;
+      font-size: 12px; vertical-align: middle;
+    }
+
+    /* Rank column */
+    .rank-cell {
+      width: 52px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px; font-weight: 700;
+      text-align: center;
+    }
+    .rank-1 { color: #ffd700; }
+    .rank-2 { color: #c0c0c0; }
+    .rank-3 { color: #cd7f32; }
+    .rank-other { color: var(--muted); font-size: 11px; }
+
+    /* Trophy icons for top 3 */
+    .rank-icon { font-size: 15px; line-height: 1; }
+
+    /* Player cell */
+    .player-cell { display: flex; align-items: center; gap: 10px; }
+    .player-avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; flex-shrink: 0;
+      border: 1.5px solid;
+    }
+    .player-name { font-weight: 600; font-size: 13px; }
+    .me-tag {
+      font-family: 'Courier New', monospace;
+      font-size: 8px; letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gold); background: rgba(200,168,75,0.15);
+      border: 1px solid rgba(200,168,75,0.3);
+      padding: 1px 5px; border-radius: 2px; margin-left: 4px;
+    }
+
+    /* Stat columns */
+    .stat-cell {
+      font-family: 'Courier New', monospace;
+      font-size: 12px; text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-cell.wins { color: #4deca8; }
+    .stat-cell.losses { color: #ff6b6b; }
+
+    /* Score column */
+    .score-cell {
+      font-family: 'Courier New', monospace;
+      font-size: 13px; font-weight: 700;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+    tr.me .score-cell { color: var(--gold); }
+
+    /* Win rate bar */
+    .wr-cell { width: 120px; }
+    .wr-bar-wrap {
+      display: flex; align-items: center; gap: 7px;
+    }
+    .wr-bar-bg {
+      flex: 1; height: 4px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 2px; overflow: hidden;
+    }
+    .wr-bar-fill {
+      height: 100%; border-radius: 2px;
+      background: linear-gradient(90deg, #4deca8, #4dd9ec);
+      transition: width 0.6s cubic-bezier(.22,1,.36,1);
+    }
+    .wr-label {
+      font-family: 'Courier New', monospace;
+      font-size: 10px; color: var(--muted);
+      min-width: 32px; text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Divider row — "YOU ARE HERE" when player is outside top view */
+    .sep-row td {
+      padding: 4px 12px;
+      font-family: 'Courier New', monospace;
+      font-size: 9px; letter-spacing: 0.14em;
+      text-transform: uppercase; color: rgba(200,168,75,0.5);
+      border-bottom: 1px dashed rgba(200,168,75,0.18);
+    }
+
+    /* Right sidebar */
+    .sidebar {
+      width: 220px; flex-shrink: 0;
+      display: flex; flex-direction: column;
+      gap: 14px;
+    }
+
+    .side-card {
+      background: rgba(11,19,24,0.75);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      backdrop-filter: blur(10px);
+      padding: 16px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .side-card-title {
+      font-family: 'Courier New', monospace;
+      font-size: 9px; letter-spacing: 0.16em;
+      text-transform: uppercase; color: var(--muted);
+    }
+
+    /* My rank summary */
+    .my-rank-big {
+      font-family: 'Courier New', monospace;
+      font-size: 36px; font-weight: 700;
+      color: var(--gold); line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .my-rank-sub { font-size: 11px; color: var(--muted); }
+    .my-rank-name { font-size: 14px; font-weight: 700; color: var(--text); margin-top: 4px; }
+
+    /* Stat rows in sidebar */
+    .side-stat-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(77,217,236,0.06);
+    }
+    .side-stat-row:last-child { border-bottom: none; }
+    .side-stat-label {
+      font-family: 'Courier New', monospace;
+      font-size: 9px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .side-stat-val {
+      font-family: 'Courier New', monospace;
+      font-size: 12px; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Reward tiers */
+    .reward-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(77,217,236,0.06);
+    }
+    .reward-row:last-child { border-bottom: none; }
+    .reward-rank {
+      font-family: 'Courier New', monospace;
+      font-size: 10px; font-weight: 700;
+      min-width: 34px; color: var(--muted);
+    }
+    .reward-rank.gold-text { color: #ffd700; }
+    .reward-rank.silver-text { color: #c0c0c0; }
+    .reward-rank.bronze-text { color: #cd7f32; }
+    .reward-desc { font-size: 11px; color: var(--text); flex: 1; }
+    .reward-pack {
+      font-family: 'Courier New', monospace;
+      font-size: 9px; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--gold);
+      background: rgba(200,168,75,0.1);
+      border: 1px solid rgba(200,168,75,0.25);
+      padding: 2px 6px; border-radius: 2px;
+    }
+
+    /* ══ BOTTOM STATUS ══ */
+    .bottom-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 28px; height: 40px;
+      background: rgba(11,19,24,0.88);
+      border-top: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      flex-shrink: 0;
+    }
+    .status-text {
+      font-family: 'Courier New', monospace;
+      font-size: 10px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .status-text span { color: var(--cyan); }
+
+    @media (prefers-reduced-motion: reduce) {
+      .wr-bar-fill, .tab, .lb-table tbody tr { transition: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="bg"></div>
+<canvas id="px" style="position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;"></canvas>
+<div class="shell">
+
+  <!-- NAV -->
+  <nav class="nav">
+    <span class="nav-logo">CA</span>
+    <div class="nav-links">
+      <a href="lobby.html" class="nav-link">Play</a>
+      <a href="collection.html" class="nav-link">Collection</a>
+      <a href="packs.html" class="nav-link">Packs</a>
+      <a href="leaderboard.html" class="nav-link active">Leaderboard</a>
+    </div>
+    <div class="nav-user">
+      <div class="nav-avatar" id="nav-avatar">P</div>
+      <span class="nav-username" id="nav-username">Player</span>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- Left: table -->
+    <div class="lb-panel">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Global Rankings</div>
+        </div>
+        <span class="season-badge">Season 1</span>
+      </div>
+
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div class="filter-tabs" id="filter-tabs">
+          <button class="tab active" onclick="setTab(this,'all')">All Time</button>
+          <button class="tab" onclick="setTab(this,'weekly')">This Week</button>
+          <button class="tab" onclick="setTab(this,'daily')">Today</button>
+        </div>
+      </div>
+
+      <div class="lb-table-wrap">
+        <table class="lb-table">
+          <thead>
+            <tr>
+              <th style="text-align:center;">#</th>
+              <th>Player</th>
+              <th class="right">W</th>
+              <th class="right">L</th>
+              <th class="wr-cell">Win Rate</th>
+              <th class="right">Score</th>
+            </tr>
+          </thead>
+          <tbody id="lb-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Right: sidebar -->
+    <div class="sidebar">
+
+      <!-- My rank -->
+      <div class="side-card">
+        <div class="side-card-title">Your Standing</div>
+        <div class="my-rank-big" id="my-rank-num">#7</div>
+        <div class="my-rank-name" id="my-rank-name">Player</div>
+        <div class="my-rank-sub" id="my-rank-sub">Top 14% globally</div>
+        <div style="margin-top:4px;">
+          <div class="side-stat-row">
+            <span class="side-stat-label">Wins</span>
+            <span class="side-stat-val" style="color:#4deca8;" id="my-wins">—</span>
+          </div>
+          <div class="side-stat-row">
+            <span class="side-stat-label">Losses</span>
+            <span class="side-stat-val" style="color:#ff6b6b;" id="my-losses">—</span>
+          </div>
+          <div class="side-stat-row">
+            <span class="side-stat-label">Score</span>
+            <span class="side-stat-val" style="color:var(--gold);" id="my-score">—</span>
+          </div>
+          <div class="side-stat-row">
+            <span class="side-stat-label">Win Rate</span>
+            <span class="side-stat-val" id="my-wr">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Season rewards -->
+      <div class="side-card">
+        <div class="side-card-title">Season Rewards</div>
+        <div class="reward-row">
+          <span class="reward-rank gold-text">#1</span>
+          <span class="reward-desc">Champion Title</span>
+          <span class="reward-pack">×5 Elite</span>
+        </div>
+        <div class="reward-row">
+          <span class="reward-rank silver-text">#2–3</span>
+          <span class="reward-desc">Rival Title</span>
+          <span class="reward-pack">×3 Elite</span>
+        </div>
+        <div class="reward-row">
+          <span class="reward-rank bronze-text">#4–10</span>
+          <span class="reward-desc">Contender</span>
+          <span class="reward-pack">×5 Std</span>
+        </div>
+        <div class="reward-row">
+          <span class="reward-rank" style="color:var(--muted);">#11–50</span>
+          <span class="reward-desc">Challenger</span>
+          <span class="reward-pack">×2 Std</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- BOTTOM BAR -->
+  <div class="bottom-bar">
+    <span class="status-text">Season ends in <span id="season-countdown">—</span></span>
+    <span class="status-text"><span id="total-players">—</span> players ranked</span>
+  </div>
+
+</div>
+
+<script>
+  /* ── Auth ── */
+  const currentUser = sessionStorage.getItem('ca_user') || localStorage.getItem('ca_last_user') || 'Player';
+  document.getElementById('nav-username').textContent = currentUser;
+  document.getElementById('nav-avatar').textContent = currentUser.charAt(0).toUpperCase();
+
+  /* ── Mock leaderboard data ── */
+  const BASE_PLAYERS = [
+    { name: 'ShadowStrike',  wins: 148, losses: 22  },
+    { name: 'VoidCaller',    wins: 134, losses: 31  },
+    { name: 'ArcFlame',      wins: 119, losses: 40  },
+    { name: 'IronVeil',      wins: 108, losses: 47  },
+    { name: 'Nightthorn',    wins:  97, losses: 53  },
+    { name: 'CrystalFang',   wins:  91, losses: 58  },
+    { name: currentUser,     wins:  83, losses: 62,  isMe: true },
+    { name: 'EmberWarden',   wins:  76, losses: 68  },
+    { name: 'TideBreaker',   wins:  70, losses: 74  },
+    { name: 'GlacierEdge',   wins:  65, losses: 78  },
+    { name: 'DuskRaider',    wins:  59, losses: 82  },
+    { name: 'RootSinger',    wins:  54, losses: 86  },
+    { name: 'StormPulse',    wins:  48, losses: 90  },
+    { name: 'BlazeCrest',    wins:  43, losses: 95  },
+    { name: 'VerdantSoul',   wins:  38, losses: 100 },
+  ];
+
+  function computeScore(w, l) {
+    return w * 10 - l * 2;
+  }
+
+  const AVATAR_COLORS = [
+    ['#ff6b6b','#4a1010'], ['#4dd9ec','#0c2e36'], ['#a855f7','#2a0e40'],
+    ['#4deca8','#0b2e20'], ['#f59e0b','#2e1e04'], ['#ec4899','#3a0e22'],
+    ['#6366f1','#12144a'], ['#22d3ee','#082630'], ['#84cc16','#162205'],
+  ];
+
+  let currentTab = 'all';
+
+  function getDataForTab(tab) {
+    const factor = tab === 'daily' ? 0.04 : tab === 'weekly' ? 0.22 : 1;
+    return BASE_PLAYERS.map(p => ({
+      ...p,
+      wins:   Math.max(0, Math.round(p.wins   * factor + (p.isMe ? 0 : Math.random() * 3 - 1.5))),
+      losses: Math.max(0, Math.round(p.losses * factor + (p.isMe ? 0 : Math.random() * 2 - 1))),
+    })).map(p => ({ ...p, score: computeScore(p.wins, p.losses) }))
+      .sort((a, b) => b.score - a.score);
+  }
+
+  function setTab(el, tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    render();
+  }
+
+  function render() {
+    const data = getDataForTab(currentTab);
+    const tbody = document.getElementById('lb-body');
+    tbody.innerHTML = '';
+
+    let myRank = data.findIndex(p => p.isMe) + 1;
+    let mePushed = false;
+
+    data.forEach((p, i) => {
+      const rank = i + 1;
+
+      // Insert a separator before "me" if far down
+      if (p.isMe && rank > 8 && !mePushed) {
+        mePushed = true;
+        const sep = document.createElement('tr');
+        sep.className = 'sep-row';
+        sep.innerHTML = `<td colspan="6">▼ Your Position</td>`;
+        tbody.appendChild(sep);
+      }
+
+      const wr = p.wins + p.losses > 0
+        ? Math.round(p.wins / (p.wins + p.losses) * 100)
+        : 0;
+
+      const avatarColor = AVATAR_COLORS[(p.name.charCodeAt(0) + p.name.length) % AVATAR_COLORS.length];
+
+      const rankDisplay = rank === 1 ? `<span class="rank-icon">🥇</span>`
+                        : rank === 2 ? `<span class="rank-icon">🥈</span>`
+                        : rank === 3 ? `<span class="rank-icon">🥉</span>`
+                        : `<span class="rank-other">${rank}</span>`;
+      const rankClass = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'rank-other';
+
+      const tr = document.createElement('tr');
+      if (p.isMe) tr.className = 'me';
+
+      tr.innerHTML = `
+        <td class="rank-cell ${rankClass}">${rankDisplay}</td>
+        <td>
+          <div class="player-cell">
+            <div class="player-avatar" style="background:${avatarColor[1]};border-color:${avatarColor[0]};color:${avatarColor[0]};">
+              ${p.name.charAt(0).toUpperCase()}
+            </div>
+            <span class="player-name">${p.name}</span>
+            ${p.isMe ? '<span class="me-tag">You</span>' : ''}
+          </div>
+        </td>
+        <td class="stat-cell wins">${p.wins}</td>
+        <td class="stat-cell losses">${p.losses}</td>
+        <td class="wr-cell">
+          <div class="wr-bar-wrap">
+            <div class="wr-bar-bg">
+              <div class="wr-bar-fill" style="width:${wr}%"></div>
+            </div>
+            <span class="wr-label">${wr}%</span>
+          </div>
+        </td>
+        <td class="score-cell">${p.score.toLocaleString()}</td>`;
+      tbody.appendChild(tr);
+    });
+
+    /* Update sidebar with "me" data */
+    const me = data.find(p => p.isMe) || { wins: 0, losses: 0, score: 0 };
+    const myWr = me.wins + me.losses > 0
+      ? Math.round(me.wins / (me.wins + me.losses) * 100) : 0;
+
+    document.getElementById('my-rank-num').textContent = '#' + myRank;
+    document.getElementById('my-rank-name').textContent = currentUser;
+    const pct = Math.round((1 - myRank / data.length) * 100);
+    document.getElementById('my-rank-sub').textContent = `Top ${100 - pct}% globally`;
+    document.getElementById('my-wins').textContent    = me.wins;
+    document.getElementById('my-losses').textContent  = me.losses;
+    document.getElementById('my-score').textContent   = me.score.toLocaleString();
+    document.getElementById('my-wr').textContent      = myWr + '%';
+    document.getElementById('total-players').textContent = data.length.toLocaleString();
+  }
+
+  /* Season countdown — just cosmetic */
+  function updateCountdown() {
+    const now = new Date();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const diff = endOfMonth - now;
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
+    const m = Math.floor((diff % 3600000)  / 60000);
+    document.getElementById('season-countdown').textContent = `${d}d ${h}h ${m}m`;
+  }
+  updateCountdown();
+  setInterval(updateCountdown, 60000);
+
+  render();
+</script>
+
+<script>
+(function(){
+  if(window.matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const cv=document.getElementById('px'),cx=cv.getContext('2d');
+  const C=[{r:77,g:217,b:236,a:.55},{r:200,g:168,b:75,a:.45},{r:77,g:236,b:168,a:.4},{r:210,g:225,b:235,a:.25}];
+  let W,H,P=[];
+  function resize(){W=cv.width=window.innerWidth;H=cv.height=window.innerHeight;}
+  resize();window.addEventListener('resize',resize);
+  function rnd(a,b){return Math.random()*(b-a)+a;}
+  function make(startY){
+    const c=C[Math.floor(Math.random()*C.length)];
+    return{x:rnd(0,W),y:startY!=null?startY:rnd(0,H),vx:rnd(-.15,.15),vy:rnd(-.4,-.08),
+      sz:rnd(.8,2.8),al:rnd(.1,c.a),max:c.a,r:c.r,g:c.g,b:c.b,
+      ph:rnd(0,Math.PI*2),fr:rnd(.002,.007),sw:rnd(.08,.4),
+      life:1,dc:rnd(.0005,.0015)};
+  }
+  for(let i=0;i<70;i++){const p=make();p.life=rnd(.1,1);P.push(p);}
+  function frame(t){
+    cx.clearRect(0,0,W,H);
+    for(let i=P.length-1;i>=0;i--){
+      const p=P[i];
+      p.life-=p.dc;
+      if(p.life<=0){P[i]=make(H+5);continue;}
+      p.x+=p.vx+Math.sin(t*.001*p.fr*200+p.ph)*p.sw*.015;
+      p.y+=p.vy;
+      if(p.x<-5)p.x=W+5;if(p.x>W+5)p.x=-5;
+      const a=p.al*p.life;
+      const grd=cx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.sz*4);
+      grd.addColorStop(0,`rgba(${p.r},${p.g},${p.b},${a})`);
+      grd.addColorStop(1,`rgba(${p.r},${p.g},${p.b},0)`);
+      cx.beginPath();cx.arc(p.x,p.y,p.sz*4,0,Math.PI*2);
+      cx.fillStyle=grd;cx.fill();
+      cx.beginPath();cx.arc(p.x,p.y,p.sz*.5,0,Math.PI*2);
+      cx.fillStyle=`rgba(${p.r},${p.g},${p.b},${Math.min(1,a*2.5)})`;cx.fill();
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

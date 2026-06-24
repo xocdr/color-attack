@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Battle Arena</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0f; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- Three.js global build + OrbitControls (non-module, works from file://) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+  // Renderer
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.setClearColor(0x0a0a0f);
+  document.body.appendChild(renderer.domElement);
+
+  // Scene
+  const scene = new THREE.Scene();
+
+  // Camera — position [0, 5, 14], FOV 45
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
+  camera.position.set(0, 5, 14);
+
+  // OrbitControls — target locked to battlefield centre
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 1, 0);
+  controls.update();
+
+  // Ambient light
+  scene.add(new THREE.AmbientLight(0x8888cc, 0.6));
+
+  // Directional light with shadows
+  const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+  sun.position.set(6, 12, 8);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  scene.add(sun);
+
+  // Floor plane
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(28, 28),
+    new THREE.MeshStandardMaterial({ color: 0x12122a })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // Grid helper
+  scene.add(new THREE.GridHelper(28, 28, 0x4444aa, 0x252560));
+
+  // ── Summoning pads + monster placeholders ───────────────────────────────────
+  const SLOTS = {
+    player: { positions: [[-3,0,4], [0,0,4], [3,0,4]], ringColor: 0x00ffff, bodyColor: 0x0088aa },
+    enemy:  { positions: [[-3,0,-4],[0,0,-4],[3,0,-4]], ringColor: 0xff2222, bodyColor: 0xaa0022 },
+  };
+
+  const CAPSULE_HEIGHT = 2;
+  const CAPSULE_RADIUS = 0.4;
+
+  // Shared geometries (CylinderGeometry — CapsuleGeometry requires r142+)
+  const ringGeo    = new THREE.RingGeometry(0.55, 0.85, 48);
+  const capsuleGeo = new THREE.CylinderGeometry(CAPSULE_RADIUS, CAPSULE_RADIUS, CAPSULE_HEIGHT, 16);
+
+  Object.values(SLOTS).forEach(({ positions, ringColor, bodyColor }) => {
+    const ringMat = new THREE.MeshStandardMaterial({
+      color: ringColor, emissive: ringColor, emissiveIntensity: 1.2,
+      side: THREE.DoubleSide,
+    });
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: bodyColor, emissive: bodyColor, emissiveIntensity: 0.25,
+    });
+
+    positions.forEach(([x, , z]) => {
+      // Ring — flat on the ground
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, 0.01, z);
+      scene.add(ring);
+
+      // Capsule — sits on the ground (y = half total height)
+      const capsule = new THREE.Mesh(capsuleGeo, bodyMat);
+      capsule.position.set(x, CAPSULE_HEIGHT / 2, z);
+      capsule.castShadow = true;
+      scene.add(capsule);
+    });
+  });
+
+  // Resize
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // Render loop
+  (function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+</script>
+
+</body>
+</html>

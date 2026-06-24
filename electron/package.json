@@ -1,12 +1,12 @@
 {
-  "name": "color-attack-demo",
+  "name": "ascend",
   "version": "1.0.0",
-  "description": "Color Attack Demo — Electron wrapper",
+  "description": "Ascend — Electron wrapper",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-packager .. \"Color Attack Demo\" --platform=win32 --arch=x64 --electron-version=29.4.6 --out=../dist --overwrite --ignore=electron/node_modules --ignore=dist",
-    "build-mac": "electron-packager .. \"Color Attack Demo\" --platform=darwin --arch=x64 --electron-version=29.4.6 --out=../dist --overwrite --ignore=electron/node_modules --ignore=dist"
+    "build": "electron-packager .. \"Ascend\" --platform=win32 --arch=x64 --electron-version=29.4.6 --out=../dist --overwrite --ignore=electron/node_modules --ignore=dist",
+    "build-mac": "electron-packager .. \"Ascend\" --platform=darwin --arch=x64 --electron-version=29.4.6 --out=../dist --overwrite --ignore=electron/node_modules --ignore=dist"
   },
   "devDependencies": {
     "electron": "^29.0.0",

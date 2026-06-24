@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Ascend — Lobby</title>
+  <script>if(!localStorage.getItem('ca_last_user'))window.location.replace('login.html');</script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:        #0b1318;
+      --teal:      #1a2e38;
+      --teal-mid:  #1f3a47;
+      --cyan:      #4dd9ec;
+      --cyan-dim:  rgba(77,217,236,0.15);
+      --gold:      #c8a84b;
+      --gold-dim:  rgba(200,168,75,0.18);
+      --text:      #d4dfe6;
+      --muted:     #5a7080;
+      --border:    rgba(77,217,236,0.12);
+      --panel:     rgba(11,19,24,0.82);
+      --panel-alt: rgba(18,32,42,0.9);
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: var(--text);
+    }
+
+    /* ── Full-screen background ── */
+    .bg {
+      position: fixed; inset: 0; z-index: 0;
+      background: url('src/bg/battle-bg.jpg') center / cover no-repeat;
+    }
+    .bg::after {
+      content: '';
+      position: absolute; inset: 0;
+      background:
+        linear-gradient(to bottom, rgba(11,19,24,0.55) 0%, rgba(11,19,24,0.3) 40%, rgba(11,19,24,0.7) 100%);
+    }
+
+    /* ── Root layout ── */
+    .shell {
+      position: relative; z-index: 1;
+      width: 100vw; height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ══════════════════════════════
+       TOP NAV
+    ══════════════════════════════ */
+    .nav {
+      display: flex;
+      align-items: center;
+      padding: 0 28px;
+      height: 52px;
+      background: rgba(8,15,20,0.78);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .nav-logo {
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-right: 28px;
+      white-space: nowrap;
+    }
+
+    .nav-logo span { color: var(--gold); }
+
+    .nav-links {
+      display: flex;
+      gap: 2px;
+      list-style: none;
+      flex: 1;
+    }
+
+    .nav-links li a {
+      display: block;
+      padding: 0 16px;
+      line-height: 52px;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      text-decoration: none;
+      color: var(--muted);
+      transition: color 0.2s;
+      position: relative;
+    }
+
+    .nav-links li a:hover { color: var(--text); }
+
+    .nav-links li.active a {
+      color: var(--cyan);
+    }
+
+    .nav-links li.active a::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 16px; right: 16px;
+      height: 2px;
+      background: var(--cyan);
+    }
+
+    .nav-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+    }
+
+    .nav-username {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      color: var(--text);
+    }
+
+    .nav-avatar {
+      width: 30px; height: 30px;
+      background: var(--teal-mid);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--cyan);
+      font-size: 13px;
+      font-weight: 700;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* ══════════════════════════════
+       MAIN CONTENT
+    ══════════════════════════════ */
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 16px;
+      padding: 20px 24px;
+      overflow: hidden;
+    }
+
+    /* ── Left: play modes ── */
+    .play-modes {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow: hidden;
+    }
+
+    .mode-btn {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      background: var(--panel);
+      display: flex;
+      align-items: flex-end;
+      transition: border-color 0.25s;
+      text-decoration: none;
+    }
+
+    .mode-btn:hover { border-color: rgba(77,217,236,0.4); }
+
+    .mode-btn:hover .mode-art {
+      transform: scale(1.04);
+    }
+
+    .mode-art {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      object-position: center top;
+      filter: saturate(0.7) brightness(0.55);
+      transition: transform 0.4s ease, filter 0.25s;
+    }
+
+    .mode-btn:hover .mode-art {
+      filter: saturate(0.85) brightness(0.65);
+    }
+
+    /* Art overlay gradients */
+    .mode-btn::before {
+      content: '';
+      position: absolute; inset: 0; z-index: 1;
+      background: linear-gradient(
+        to top,
+        rgba(8,15,20,0.92) 0%,
+        rgba(8,15,20,0.4) 45%,
+        transparent 100%
+      );
+    }
+
+    .mode-label {
+      position: relative; z-index: 2;
+      padding: 20px 28px;
+      width: 100%;
+    }
+
+    .mode-tag {
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 6px;
+    }
+
+    .mode-title {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #fff;
+      text-shadow: 0 2px 16px rgba(0,0,0,0.8);
+      text-wrap: balance;
+    }
+
+    .mode-desc {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-family: 'Courier New', monospace;
+      letter-spacing: 0.05em;
+    }
+
+    /* Play arrow badge */
+    .mode-badge {
+      position: absolute;
+      top: 18px; right: 20px;
+      z-index: 2;
+      width: 36px; height: 36px;
+      background: var(--cyan);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0;
+      transform: scale(0.8);
+      transition: opacity 0.2s, transform 0.2s;
+    }
+
+    .mode-btn:hover .mode-badge {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .mode-badge svg { display: block; }
+
+    /* ── Right: Deck panel ── */
+    .deck-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: hidden;
+    }
+
+    .panel-box {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(10px);
+    }
+
+    .box-header {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .box-title {
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--cyan);
+    }
+
+    .box-action {
+      font-family: 'Courier New', monospace;
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .box-action:hover { color: var(--text); }
+
+    /* Deck name row */
+    .deck-name-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .deck-icon {
+      color: var(--cyan);
+      flex-shrink: 0;
+    }
+
+    .deck-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      flex: 1;
+    }
+
+    .deck-count {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      color: var(--gold);
+      letter-spacing: 0.05em;
+    }
+
+    /* Card fan preview */
+    .card-fan {
+      padding: 16px 16px 14px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      position: relative;
+      height: 140px;
+      flex-shrink: 0;
+    }
+
+    .fan-card {
+      position: absolute;
+      width: 72px;
+      height: 100px;
+      border: 1px solid rgba(77,217,236,0.25);
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+      transform-origin: bottom center;
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+
+    .fan-card img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      object-position: center top;
+      filter: saturate(0.8);
+    }
+
+    .card-fan:hover .fan-card { filter: none; }
+
+    /* Position each card in the fan */
+    .fan-card:nth-child(1) { transform: rotate(-18deg) translateX(-80px); z-index: 1; }
+    .fan-card:nth-child(2) { transform: rotate(-9deg)  translateX(-42px); z-index: 2; }
+    .fan-card:nth-child(3) { transform: rotate(0deg)   translateX(0);     z-index: 3; }
+    .fan-card:nth-child(4) { transform: rotate(9deg)   translateX(42px);  z-index: 2; }
+    .fan-card:nth-child(5) { transform: rotate(18deg)  translateX(80px);  z-index: 1; }
+
+    .card-fan:hover .fan-card:nth-child(1) { transform: rotate(-20deg) translateX(-88px) translateY(-8px); }
+    .card-fan:hover .fan-card:nth-child(2) { transform: rotate(-10deg) translateX(-46px) translateY(-6px); }
+    .card-fan:hover .fan-card:nth-child(3) { transform: rotate(0deg)   translateX(0)     translateY(-10px); }
+    .card-fan:hover .fan-card:nth-child(4) { transform: rotate(10deg)  translateX(46px)  translateY(-6px); }
+    .card-fan:hover .fan-card:nth-child(5) { transform: rotate(20deg)  translateX(88px)  translateY(-8px); }
+
+    /* Deck stats row */
+    .deck-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-top: 1px solid var(--border);
+    }
+
+    .stat-cell {
+      padding: 10px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .stat-cell:first-child {
+      border-right: 1px solid var(--border);
+    }
+
+    .stat-label {
+      font-family: 'Courier New', monospace;
+      font-size: 9px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .stat-val {
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Quick actions ── */
+    .quick-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .quick-btn {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 16px;
+      background: none;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.18s;
+      font-family: inherit;
+    }
+
+    .quick-btn:last-child { border-bottom: none; }
+    .quick-btn:hover { background: rgba(77,217,236,0.05); }
+
+    .quick-btn-icon {
+      width: 28px; height: 28px;
+      background: var(--teal);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--cyan);
+      flex-shrink: 0;
+    }
+
+    .quick-btn-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .quick-btn-sub {
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    .quick-btn-arrow {
+      margin-left: auto;
+      color: var(--muted);
+      transition: transform 0.2s, color 0.2s;
+    }
+
+    .quick-btn:hover .quick-btn-arrow {
+      transform: translateX(3px);
+      color: var(--cyan);
+    }
+
+    /* ── Status bar ── */
+    .status-bar {
+      height: 28px;
+      background: rgba(8,15,20,0.85);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 24px;
+      flex-shrink: 0;
+    }
+
+    .status-item {
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: #3ddc84;
+      animation: pulse-dot 2.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    .status-item.ping { margin-left: auto; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .mode-art, .mode-badge, .quick-btn-arrow, .fan-card { transition: none; }
+      .status-dot { animation: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="bg"></div>
+  <canvas id="px" style="position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;"></canvas>
+
+  <div class="shell">
+
+    <!-- ── NAV ── -->
+    <nav class="nav">
+      <div class="nav-logo">Color <span>Attack</span></div>
+      <ul class="nav-links">
+        <li class="active"><a href="lobby.html">Play</a></li>
+        <li><a href="collection.html">Collection</a></li>
+        <li><a href="packs.html">Packs</a></li>
+        <li><a href="leaderboard.html">Leaderboard</a></li>
+      </ul>
+      <div class="nav-user">
+        <span class="nav-username" id="nav-username">Player</span>
+        <div class="nav-avatar" id="nav-avatar">P</div>
+      </div>
+    </nav>
+
+    <!-- ── MAIN ── -->
+    <div class="main">
+
+      <!-- Play modes -->
+      <div class="play-modes">
+
+        <a class="mode-btn" href="index.html">
+          <img class="mode-art" src="src/card-img/ai-image-generator-1780302582434.png" alt="">
+          <div class="mode-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#000"><polygon points="5,3 19,12 5,21"/></svg>
+          </div>
+          <div class="mode-label">
+            <div class="mode-tag">Single Player</div>
+            <div class="mode-title">Play Solo</div>
+            <div class="mode-desc">Battle against the AI opponent</div>
+          </div>
+        </a>
+
+        <a class="mode-btn" href="#">
+          <img class="mode-art" src="src/card-img/ai-image-generator-1780302782081.png" alt="">
+          <div class="mode-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#000"><polygon points="5,3 19,12 5,21"/></svg>
+          </div>
+          <div class="mode-label">
+            <div class="mode-tag">Multiplayer</div>
+            <div class="mode-title">Play Multi</div>
+            <div class="mode-desc">Challenge a real opponent online</div>
+          </div>
+        </a>
+
+      </div>
+
+      <!-- Right panel -->
+      <div class="deck-panel">
+
+        <!-- Active deck -->
+        <div class="panel-box">
+          <div class="box-header">
+            <span class="box-title">Active Deck</span>
+            <a href="#" class="box-action">Change</a>
+          </div>
+
+          <div class="deck-name-row">
+            <svg class="deck-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="14" height="18" rx="1"/><rect x="8" y="5" width="14" height="18" rx="1" fill="currentColor" fill-opacity="0.2"/></svg>
+            <span class="deck-name">Water Starter</span>
+            <span class="deck-count">20 / 20</span>
+          </div>
+
+          <!-- Card fan -->
+          <div class="card-fan">
+            <div class="fan-card"><img src="src/card-img/ai-image-generator-1780302582434.png" alt="Card"></div>
+            <div class="fan-card"><img src="src/card-img/ai-image-generator-1780302672969.png" alt="Card"></div>
+            <div class="fan-card"><img src="src/card-img/ai-image-generator-1780303021745.png" alt="Card"></div>
+            <div class="fan-card"><img src="src/card-img/ai-image-generator-1780303159315.png" alt="Card"></div>
+            <div class="fan-card"><img src="src/card-img/ai-image-generator-1780303293899.png" alt="Card"></div>
+          </div>
+
+          <div class="deck-stats">
+            <div class="stat-cell">
+              <span class="stat-label">Cards</span>
+              <span class="stat-val">20</span>
+            </div>
+            <div class="stat-cell">
+              <span class="stat-label">Win Rate</span>
+              <span class="stat-val">62%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="panel-box quick-actions">
+          <a href="collection.html" class="quick-btn">
+            <div class="quick-btn-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+            </div>
+            <div>
+              <div class="quick-btn-label">Collection</div>
+              <div class="quick-btn-sub">View all cards</div>
+            </div>
+            <svg class="quick-btn-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
+          </a>
+          <a href="packs.html" class="quick-btn">
+            <div class="quick-btn-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="1"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+            <div>
+              <div class="quick-btn-label">Packs</div>
+              <div class="quick-btn-sub">Open card packs</div>
+            </div>
+            <svg class="quick-btn-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
+          </a>
+          <a href="leaderboard.html" class="quick-btn">
+            <div class="quick-btn-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
+            </div>
+            <div>
+              <div class="quick-btn-label">Leaderboard</div>
+              <div class="quick-btn-sub">Top ranked players</div>
+            </div>
+            <svg class="quick-btn-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
+          </a>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── STATUS BAR ── -->
+    <div class="status-bar">
+      <div class="status-item">
+        <div class="status-dot"></div>
+        <span>Online</span>
+      </div>
+      <div class="status-item">Ranked Season 1</div>
+      <div class="status-item ping">Ping: 32ms</div>
+    </div>
+
+  </div>
+
+  <script>
+    /* Populate username from localStorage (set by login page) */
+    (function () {
+      const stored = sessionStorage.getItem('ca_user') || localStorage.getItem('ca_last_user') || 'Player';
+      const nameEl  = document.getElementById('nav-username');
+      const avatarEl = document.getElementById('nav-avatar');
+      nameEl.textContent  = stored;
+      avatarEl.textContent = stored.charAt(0).toUpperCase();
+    })();
+  </script>
+
+<script>
+(function(){
+  if(window.matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const cv=document.getElementById('px'),cx=cv.getContext('2d');
+  const C=[{r:77,g:217,b:236,a:.55},{r:200,g:168,b:75,a:.45},{r:77,g:236,b:168,a:.4},{r:210,g:225,b:235,a:.25}];
+  let W,H,P=[];
+  function resize(){W=cv.width=window.innerWidth;H=cv.height=window.innerHeight;}
+  resize();window.addEventListener('resize',resize);
+  function rnd(a,b){return Math.random()*(b-a)+a;}
+  function make(startY){
+    const c=C[Math.floor(Math.random()*C.length)];
+    return{x:rnd(0,W),y:startY!=null?startY:rnd(0,H),vx:rnd(-.15,.15),vy:rnd(-.4,-.08),
+      sz:rnd(.8,2.8),al:rnd(.1,c.a),max:c.a,r:c.r,g:c.g,b:c.b,
+      ph:rnd(0,Math.PI*2),fr:rnd(.002,.007),sw:rnd(.08,.4),
+      life:1,dc:rnd(.0005,.0015)};
+  }
+  for(let i=0;i<70;i++){const p=make();p.life=rnd(.1,1);P.push(p);}
+  function frame(t){
+    cx.clearRect(0,0,W,H);
+    for(let i=P.length-1;i>=0;i--){
+      const p=P[i];
+      p.life-=p.dc;
+      if(p.life<=0){P[i]=make(H+5);continue;}
+      p.x+=p.vx+Math.sin(t*.001*p.fr*200+p.ph)*p.sw*.015;
+      p.y+=p.vy;
+      if(p.x<-5)p.x=W+5;if(p.x>W+5)p.x=-5;
+      const a=p.al*p.life;
+      const grd=cx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.sz*4);
+      grd.addColorStop(0,`rgba(${p.r},${p.g},${p.b},${a})`);
+      grd.addColorStop(1,`rgba(${p.r},${p.g},${p.b},0)`);
+      cx.beginPath();cx.arc(p.x,p.y,p.sz*4,0,Math.PI*2);
+      cx.fillStyle=grd;cx.fill();
+      cx.beginPath();cx.arc(p.x,p.y,p.sz*.5,0,Math.PI*2);
+      cx.fillStyle=`rgba(${p.r},${p.g},${p.b},${Math.min(1,a*2.5)})`;cx.fill();
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>

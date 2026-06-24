@@ -1,4 +1,4 @@
-// ─── Color Attack TCG ─────────────────────────────────────────────────────────
+// ─── Ascend TCG ───────────────────────────────────────────────────────────────
 // Pure vanilla JS + HTML5 Canvas. No dependencies. No build step.
 
 const canvas = document.getElementById('gameCanvas');
@@ -16,14 +16,29 @@ const COLORS = [
 
 // ─── Card definitions ─────────────────────────────────────────────────────────
 const CARD_DEFS = {
-  yellow: { name: 'Spark',  mana: 1, atk: 1, def: 2, ability: null },
-  orange: { name: 'Ember',  mana: 2, atk: 2, def: 3, ability: null },
-  red:    { name: 'Blaze',  mana: 3, atk: 4, def: 1, ability: 'charge' },
-  purple: { name: 'Void',   mana: 3, atk: 3, def: 2, ability: null },
-  blue:   { name: 'Frost',  mana: 2, atk: 1, def: 5, ability: 'taunt' },
-  green:  { name: 'Nature', mana: 2, atk: 0, def: 4, ability: 'heal' },
+  yellow:   { name: 'Spark',         mana: 1, atk: 1, def: 2, ability: null },
+  orange:   { name: 'Ember',         mana: 2, atk: 2, def: 3, ability: null },
+  red:      { name: 'Blaze',         mana: 3, atk: 4, def: 1, ability: 'charge' },
+  purple:   { name: 'Void',          mana: 3, atk: 3, def: 2, ability: null },
+  blue:     { name: 'Frost',         mana: 2, atk: 1, def: 5, ability: 'taunt' },
+  green:    { name: 'Nature',        mana: 2, atk: 0, def: 4, ability: 'heal' },
+  // ── GLB character cards ────────────────────────────────────────────────────
+  warrior:  { name: 'Iron Warrior',  colorRef: 'red',    mana: 3, atk: 5, def: 3, ability: 'charge', glb: 'src/glb/warrior.glb' },
+  demon:    { name: 'Inferno Demon', colorRef: 'red',    mana: 4, atk: 6, def: 3, ability: 'charge', glb: 'src/glb/demon.glb' },
+  dragon:   { name: 'Storm Dragon',  colorRef: 'blue',   mana: 5, atk: 7, def: 5, ability: 'taunt',  glb: 'src/glb/dragon.glb' },
+  dark_elf: { name: 'Shadow Elf',    colorRef: 'purple', mana: 2, atk: 3, def: 3, ability: null,     glb: 'src/glb/dark_elf.glb' },
+  cyborg_m: { name: 'Cyber Knight',  colorRef: 'blue',   mana: 3, atk: 4, def: 4, ability: null,     glb: 'src/glb/cyborg_male.glb' },
+  cyborg_f: { name: 'Cyber Veil',    colorRef: 'green',  mana: 2, atk: 2, def: 5, ability: 'heal',   glb: 'src/glb/cyborg_female.glb' },
+  punk_f:   { name: 'Neon Wraith',   colorRef: 'yellow', mana: 2, atk: 3, def: 2, ability: null,     glb: 'src/glb/female_cyberpunk.glb' },
+  cultist:  { name: 'Void Monk',     colorRef: 'purple', mana: 3, atk: 2, def: 6, ability: 'taunt',  glb: 'src/glb/dark_faceless_cultist_monk.glb' },
+};
+const ABILITY_DESCRIPTIONS = {
+  charge: 'Fire Damage: On play, deal 2 damage to all other cards.',
+  taunt:  'Taunt: Forces enemies to attack this card.',
+  heal:   'Rejuvenate: On play, restore 3 HP to your hero.',
 };
 const COLOR_IDS = ['yellow', 'orange', 'red', 'purple', 'blue', 'green'];
+const ALL_CARD_IDS = [...COLOR_IDS, 'warrior', 'demon', 'dragon', 'dark_elf', 'cyborg_m', 'cyborg_f', 'punk_f', 'cultist'];
 
 // ─── Card art images ──────────────────────────────────────────────────────────
 const CARD_IMAGES = {};
@@ -71,12 +86,14 @@ function getMergedCard(base) {
 
 function makeCard(colorId) {
   const def      = CARD_DEFS[colorId];
-  const colorDef = COLORS.find(c => c.id === colorId);
+  const colorKey = def.colorRef || colorId;
+  const colorDef = COLORS.find(c => c.id === colorKey);
   return {
     id: colorId, colorDef, level: 1,
     name: def.name, manaCost: def.mana,
     attack: def.atk, defense: def.def, maxDefense: def.def,
     ability: def.ability, hasAttacked: false, summoningSickness: true,
+    glb: def.glb || null,
   };
 }
 
@@ -99,11 +116,16 @@ let currentTurn     = 'player';
 let turnNumber      = 1;
 let phase           = 'play';
 let gameOver        = false;
+const playerName    = 'Marc';
 
 let selectedHandIdx  = null;
 let selectedFieldIdx = null;
+let previewCard      = null;  // card shown in right GY detail panel
 let animLock         = false;
 let dragState        = null;  // { card, handIdx, x, y, startX, startY, isDragging, hoverSlot }
+let endTurnHover     = false;
+let endTurnPress     = 0;     // timestamp of last press, for click-ripple effect
+let gameNow          = 0;     // updated each frame, used for time-based button animations
 
 // Flash/impact tweens
 let playerFlash  = null;
@@ -121,13 +143,13 @@ let audioCtx     = null;
 
 // ─── Layout zones ─────────────────────────────────────────────────────────────
 const ZONE = {
-  topHud:      () => ({ y: 0,                        h: canvas.height * 0.09 }),
-  enemyHand:   () => ({ y: canvas.height * 0.09,     h: canvas.height * 0.11 }),
+  topHud:      () => ({ y: 0,                        h: canvas.height * 0.10 }),
+  enemyHand:   () => ({ y: canvas.height * 0.10,     h: canvas.height * 0.10 }),
   enemyField:  () => ({ y: canvas.height * 0.20,     h: canvas.height * 0.22 }),
-  centerBar:   () => ({ y: canvas.height * 0.42,     h: canvas.height * 0.08 }),
-  playerField: () => ({ y: canvas.height * 0.50,     h: canvas.height * 0.22 }),
-  playerHand:  () => ({ y: canvas.height * 0.72,     h: canvas.height * 0.21 }),
-  bottomHud:   () => ({ y: canvas.height * 0.93,     h: canvas.height * 0.07 }),
+  centerBar:   () => ({ y: canvas.height * 0.42,     h: canvas.height * 0.05 }),
+  playerField: () => ({ y: canvas.height * 0.47,     h: canvas.height * 0.22 }),
+  playerHand:  () => ({ y: canvas.height * 0.69,     h: canvas.height * 0.19 }),
+  bottomHud:   () => ({ y: canvas.height * 0.88,     h: canvas.height * 0.12 }),
 };
 
 // ─── Flat field projection (no perspective distortion) ───────────────────────
@@ -144,20 +166,34 @@ function fieldCardW() { return Math.min(canvas.width * 0.15, 120 * devicePixelRa
 function fieldCardH() { return fieldCardW() * 1.45; }
 
 // ─── Geometry helpers ─────────────────────────────────────────────────────────
+// Perspective constants — enemy field appears smaller/farther (isometric depth)
+const PERSP_PLAYER_SCALE = 1.00;
+const PERSP_ENEMY_SCALE  = 0.68;
+const PERSP_X_CONVERGE   = 0.82;  // enemy X positions converge toward canvas center
+
 function fieldSlotRect(side, idx) {
+  const perspScale = side === 'player' ? PERSP_PLAYER_SCALE : PERSP_ENEMY_SCALE;
   const fz0    = side === 'player' ? ZONE.playerField() : ZONE.enemyField();
-  const maxCh  = fz0.h * 0.82;                                     // card must fit inside zone
-  const cw     = Math.min(canvas.width * 0.125, 100 * devicePixelRatio, maxCh / 1.45);
+  const vpX    = canvas.width * 0.5;
+
+  const maxCh  = fz0.h * 0.82;
+  const baseCw = Math.min(canvas.width * 0.125, 100 * devicePixelRatio, maxCh / 1.45);
+  const cw     = baseCw * perspScale;
   const ch     = cw * 1.45;
-  const gap    = canvas.width * 0.014;
+  const gap    = canvas.width * 0.014 * perspScale;
   const totalW = MAX_SLOTS * cw + (MAX_SLOTS - 1) * gap;
   const startX = (canvas.width - totalW) * 0.5;
-  const fz     = side === 'player' ? ZONE.playerField() : ZONE.enemyField();
-  const cx     = startX + idx * (cw + gap) + cw * 0.5;
-  const cy     = fz.y + fz.h * 0.5;
+
+  const flatCx = startX + idx * (cw + gap) + cw * 0.5;
+  const cx     = side === 'enemy' ? vpX + (flatCx - vpX) * PERSP_X_CONVERGE : flatCx;
+  const cy     = fz0.y + fz0.h * (side === 'player' ? 0.50 : 0.48);
+
   return { x: cx - cw * 0.5, y: cy - ch * 0.5, w: cw, h: ch,
-           cx, cy, scale: 1, normY: side === 'player' ? 1 : 0 };
+           cx, cy, scale: perspScale, normY: side === 'player' ? 1 : 0 };
 }
+
+// Expose slot rects for Three.js character layer
+window._getPlayerSlotRects = () => Array.from({ length: MAX_SLOTS }, (_, i) => fieldSlotRect('player', i));
 
 function emzSlotRect(idx) {
   const normX = idx === 0 ? 0.35 : 0.65;
@@ -195,12 +231,13 @@ function hitTestHandCard(px, py, idx, total) {
 }
 
 function endTurnRect() {
-  const cB = ZONE.centerBar();
-  const bw = Math.min(canvas.width * 0.20, 120 * devicePixelRatio);
-  const bh = Math.min(cB.h * 0.65, 32 * devicePixelRatio);
-  const x  = canvas.width * 0.5 - bw * 0.5;
-  const y  = cB.y + (cB.h - bh) * 0.5;
-  return { x, y, w: bw, h: bh, cx: x + bw * 0.5, cy: cB.y + cB.h * 0.5 };
+  const bZ  = ZONE.bottomHud();
+  const bw  = Math.min(canvas.width * 0.22, 140 * devicePixelRatio);
+  const bh  = Math.min(bZ.h * 0.68, 36 * devicePixelRatio);
+  const pad = 14 * devicePixelRatio;
+  const x   = canvas.width - pad - bw;
+  const y   = bZ.y + (bZ.h - bh) * 0.5 - bh * 2.7;
+  return { x, y, w: bw, h: bh, cx: x + bw * 0.5, cy: y + bh * 0.5 };
 }
 
 function pointIn(px, py, r) {
@@ -209,7 +246,7 @@ function pointIn(px, py, r) {
 
 // ─── Deck / draw ──────────────────────────────────────────────────────────────
 function dealCard(target) {
-  const id   = COLOR_IDS[Math.floor(Math.random() * COLOR_IDS.length)];
+  const id   = ALL_CARD_IDS[Math.floor(Math.random() * ALL_CARD_IDS.length)];
   const hand = target === 'player' ? playerHand : enemyHand;
   if (hand.length >= MAX_HAND) hand.shift();
   hand.push(makeCard(id));
@@ -344,6 +381,7 @@ function killCard(field, idx, rect) {
   }
   particles.push({ type: 'ring', color: card.colorDef.hex, glow: card.colorDef.glow,
     x: rect.cx, y: rect.cy, radius: 0, maxRadius: rect.w * 0.9, life: 1, alpha: 1, speed: 0.03 });
+  if (field === playerField) window.CharacterField?.clearSlot(idx);
   field[idx] = null;
 }
 
@@ -389,7 +427,9 @@ function mergeCards(keepIdx, removeIdx) {
   playSound(keep.id);
   setTimeout(() => {
     playerField[removeIdx] = null;
+    window.CharacterField?.clearSlot(removeIdx);
     playerField[keepIdx]   = merged;
+    window.CharacterField?.setSlot(keepIdx, merged.glb);
     selectedFieldIdx = null;
     spawnFloatingNumber('LVL ' + merged.level + '!', keepR, '#FFD700', '#ffe87a');
     triggerShake(4);
@@ -410,6 +450,7 @@ function mergeFromHand(handIdx, fieldIdx) {
   setTimeout(() => {
     playerHand.splice(handIdx, 1);
     playerField[fieldIdx] = merged;
+    window.CharacterField?.setSlot(fieldIdx, merged.glb);
     selectedHandIdx = null;
     spawnFloatingNumber('LVL ' + merged.level + '!', fieldR, '#FFD700', '#ffe87a');
     triggerShake(4);
@@ -574,7 +615,7 @@ function handleClickLogic(pos) {
   if (gameOver) { resetGame(); return; }
   if (phase === 'enemy') return;
 
-  if (pointIn(pos.x, pos.y, endTurnRect())) { endPlayerTurn(); return; }
+  if (pointIn(pos.x, pos.y, endTurnRect())) { endTurnPress = gameNow; endPlayerTurn(); return; }
 
   for (let i = 0; i < MAX_SLOTS; i++) {
     const r = fieldSlotRect('player', i);
@@ -589,6 +630,7 @@ function handleClickLogic(pos) {
         playerMana -= card.manaCost;
         card.summoningSickness = card.ability !== 'charge';
         playerField[i] = card;
+        window.CharacterField?.setSlot(i, card.glb);
         playerHand.splice(selectedHandIdx, 1);
         selectedHandIdx = null;
         playPutCardSound(); bgPulse = 0.5;
@@ -656,9 +698,10 @@ function onPointerDown(e) {
 }
 
 function onPointerMove(e) {
-  if (!dragState) return;
-  e.preventDefault();
+  if (e.cancelable) e.preventDefault();
   const pos = getEventPos(e);
+  endTurnHover = pointIn(pos.x, pos.y, endTurnRect());
+  if (!dragState) return;
   dragState.x = pos.x; dragState.y = pos.y;
   const dx = pos.x - dragState.startX, dy = pos.y - dragState.startY;
   if (!dragState.isDragging && (Math.abs(dx) > 8 * devicePixelRatio || Math.abs(dy) > 8 * devicePixelRatio)) {
@@ -702,6 +745,7 @@ function onPointerUp(e) {
       playerMana -= card.manaCost;
       card.summoningSickness = card.ability !== 'charge';
       playerField[slot] = card;
+      window.CharacterField?.setSlot(slot, card.glb);
       playerHand.splice(dragState.handIdx, 1);
       selectedHandIdx = null;
       playPutCardSound(); bgPulse = 0.5;
@@ -724,6 +768,7 @@ function resetGame() {
   enemyMana  = 2; enemyMaxMana  = 2;
   playerField = [null, null, null, null, null];
   enemyField  = [null, null, null, null, null];
+  window.CharacterField?.clearAll();
   playerHand  = []; enemyHand = [];
   currentTurn = 'player'; turnNumber = 1; phase = 'play'; gameOver = false;
   selectedHandIdx = null; selectedFieldIdx = null; animLock = false;
@@ -898,6 +943,75 @@ function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
 function setGlow(color, blur)  { ctx.shadowColor = color; ctx.shadowBlur = blur; }
 function clearGlow()            { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }
 
+function drawPlatform(r, isHover) {
+  const dpr   = devicePixelRatio;
+  const pw    = r.w * 0.88;
+  const ph    = pw * 0.26;          // ellipse height — flat for perspective
+  const sideH = r.h * 0.09;         // cylinder body height
+  const cx    = r.cx;
+  const topY  = r.y + r.h - sideH - ph * 0.5;   // center Y of top ellipse
+
+  // Ground shadow
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.ellipse(cx, topY + sideH + ph * 0.5 + 3 * dpr, pw * 0.44, ph * 0.28, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Cylinder side face (front half only — bottom arc + sides)
+  const sideGrad = ctx.createLinearGradient(cx, topY, cx, topY + sideH);
+  sideGrad.addColorStop(0, isHover ? '#1a2a5e' : '#0d1530');
+  sideGrad.addColorStop(1, '#040609');
+  ctx.fillStyle = sideGrad;
+  ctx.beginPath();
+  ctx.ellipse(cx, topY + sideH, pw * 0.5, ph * 0.5, 0, 0, Math.PI);  // bottom arc
+  ctx.lineTo(cx - pw * 0.5, topY);
+  ctx.ellipse(cx, topY, pw * 0.5, ph * 0.5, 0, Math.PI, 0, true);    // top arc (back edge)
+  ctx.closePath();
+  ctx.fill();
+
+  // Top face — filled ellipse (the surface the character stands on)
+  if (isHover) setGlow('#4488ff', 22);
+  const topGrad = ctx.createRadialGradient(cx, topY, 0, cx, topY, pw * 0.5);
+  topGrad.addColorStop(0, isHover ? '#2e3d8a' : '#1e2a54');
+  topGrad.addColorStop(0.65, isHover ? '#141e50' : '#0e1630');
+  topGrad.addColorStop(1, '#080c18');
+  ctx.fillStyle = topGrad;
+  ctx.beginPath();
+  ctx.ellipse(cx, topY, pw * 0.5, ph * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Rim stroke
+  ctx.strokeStyle = isHover ? 'rgba(160,210,255,1.0)' : 'rgba(90,140,230,0.65)';
+  ctx.lineWidth   = isHover ? 2 : 1.5;
+  ctx.beginPath();
+  ctx.ellipse(cx, topY, pw * 0.5, ph * 0.5, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  clearGlow();
+
+  // Inner rune ring (dashed)
+  ctx.save();
+  ctx.setLineDash([3 * dpr, 5 * dpr]);
+  ctx.strokeStyle = isHover ? 'rgba(140,190,255,0.55)' : 'rgba(80,130,220,0.28)';
+  ctx.lineWidth   = 1;
+  ctx.beginPath();
+  ctx.ellipse(cx, topY, pw * 0.32, ph * 0.32, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Center dot
+  const dotR = isHover ? 3.5 * dpr : 2 * dpr;
+  if (isHover) setGlow('#aaddff', 10);
+  ctx.fillStyle = isHover ? 'rgba(200,230,255,0.95)' : 'rgba(110,160,240,0.5)';
+  ctx.beginPath();
+  ctx.arc(cx, topY, dotR, 0, Math.PI * 2);
+  ctx.fill();
+  clearGlow();
+}
+
 function drawRoundRect(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -941,6 +1055,34 @@ function drawHealthBar(x, y, w, h, pct, glowColor, maxHp) {
   ctx.font = `bold ${Math.max(9, h * 0.72)}px system-ui`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(Math.ceil(pct * maxHp) + ' / ' + maxHp, x + w * 0.5, y + h * 0.5);
+}
+
+// ─── HP dots display ──────────────────────────────────────────────────────────
+// cx/cy = center of the combined number+dots block
+function drawHpDots(cx, cy, totalW, currentHp, maxHp, fillColor) {
+  const numFs  = Math.max(11, totalW * 0.095);
+  ctx.font = `bold ${numFs}px system-ui`;
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText(currentHp + ' / ' + maxHp, cx, cy);
+
+  const dotAreaY = cy + numFs * 0.55;
+  const count    = maxHp;
+  const dotDiam  = Math.min(totalW / (count * 1.4), 8 * devicePixelRatio);
+  const dotR     = dotDiam * 0.5;
+  const spacing  = totalW / count;
+  const startX   = cx - totalW * 0.5 + spacing * 0.5;
+
+  for (let i = 0; i < count; i++) {
+    const dx = startX + i * spacing;
+    ctx.beginPath(); ctx.arc(dx, dotAreaY, dotR, 0, Math.PI * 2);
+    if (i < currentHp) {
+      setGlow(fillColor, 5); ctx.fillStyle = fillColor; ctx.fill(); clearGlow();
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 0.7; ctx.stroke();
+    }
+  }
 }
 
 // ─── Floating numbers ─────────────────────────────────────────────────────────
@@ -1296,28 +1438,51 @@ function drawCardFrame(card, x, y, w, h, opts) {
   ctx.save();
   if (opts.dim) ctx.globalAlpha = 0.42;
 
-  const grad = ctx.createLinearGradient(x, y, x, y + h);
-  grad.addColorStop(0, '#1a1a2a');
-  grad.addColorStop(1, '#0a0a14');
+  // ── Card background with color identity ───────────────────────────────────
+  const bgGrad = ctx.createLinearGradient(x, y, x, y + h);
+  bgGrad.addColorStop(0,   card.colorDef.dark + 'bb');
+  bgGrad.addColorStop(0.3, '#111120');
+  bgGrad.addColorStop(1,   '#070710');
   drawRoundRect(x, y, w, h, r);
-  ctx.fillStyle = grad; ctx.fill();
+  ctx.fillStyle = bgGrad; ctx.fill();
 
-  ctx.fillStyle = card.colorDef.hex + 'cc';
-  ctx.fillRect(x + r, y, w - r * 2, Math.max(2, h * 0.012));
+  // ── Colored header strip with name ────────────────────────────────────────
+  const headerH = h * 0.16;
+  ctx.save();
+  drawRoundRect(x, y, w, headerH + r, r);  // clip top corners, extend bottom past clip
+  ctx.clip();
+  const hGrad = ctx.createLinearGradient(x, y, x + w, y);
+  hGrad.addColorStop(0,   card.colorDef.dark);
+  hGrad.addColorStop(0.5, card.colorDef.hex + 'dd');
+  hGrad.addColorStop(1,   card.colorDef.dark);
+  ctx.fillStyle = hGrad;
+  ctx.fillRect(x, y, w, headerH);
+  ctx.restore();
 
-  const nameFontSz = Math.max(7, w * 0.115);
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  // Divider line below header
+  ctx.strokeStyle = card.colorDef.hex + '88';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y + headerH);
+  ctx.lineTo(x + w - r, y + headerH);
+  ctx.stroke();
+
+  // Name in header
+  const nameFontSz = Math.max(5, w * 0.08);
+  ctx.fillStyle = '#ffffff';
   ctx.font = `bold ${nameFontSz}px system-ui`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(card.name.toUpperCase(), cx, y + h * 0.065);
+  ctx.fillText(card.name.toUpperCase(), cx, y + headerH * 0.52);
 
-  const artPad = w * 0.05;
+  // ── Art image (below header, 66% of card height) ──────────────────────────
+  const artPad = w * 0.04;
   const artX   = x + artPad;
   const artW   = w - artPad * 2;
-  const artY   = y + h * 0.10;
-  const artH   = h * 0.56;
+  const artY   = y + headerH;
+  const artH   = h * 0.66;
   ctx.save();
-  drawRoundRect(artX, artY, artW, artH, r * 0.55);
+  ctx.beginPath();
+  ctx.rect(artX, artY, artW, artH);
   ctx.clip();
   const img = CARD_IMAGES[card.id];
   if (img && img.complete && img.naturalWidth > 0) {
@@ -1325,26 +1490,24 @@ function drawCardFrame(card, x, y, w, h, opts) {
     const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
     ctx.drawImage(img, artX + (artW - dw) * 0.5, artY + (artH - dh) * 0.5, dw, dh);
   } else {
-    ctx.fillStyle = card.colorDef.hex + '44';
+    ctx.fillStyle = card.colorDef.hex + '55';
     ctx.fillRect(artX, artY, artW, artH);
   }
-  const artGrad = ctx.createLinearGradient(artX, artY, artX, artY + artH);
-  artGrad.addColorStop(0, 'rgba(0,0,0,0.25)');
-  artGrad.addColorStop(0.5, 'transparent');
-  artGrad.addColorStop(1, 'rgba(0,0,0,0.55)');
-  ctx.fillStyle = artGrad; ctx.fillRect(artX, artY, artW, artH);
+  // Vignette bottom of art
+  const artVig = ctx.createLinearGradient(artX, artY + artH * 0.55, artX, artY + artH);
+  artVig.addColorStop(0, 'transparent');
+  artVig.addColorStop(1, 'rgba(0,0,0,0.75)');
+  ctx.fillStyle = artVig; ctx.fillRect(artX, artY, artW, artH);
   ctx.restore();
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-  ctx.lineWidth = Math.max(1, w * 0.02);
-  drawRoundRect(artX, artY, artW, artH, r * 0.55); ctx.stroke();
-
-  if (card.ability) {
-    const abilityText = card.ability === 'charge' ? '⚡ Charge' : card.ability === 'taunt' ? '🛡 Taunt' : '💚 Heal +3';
+  // ── Ability text (between art bottom and card bottom) ─────────────────────
+  if (card.ability && card.ability !== 'taunt') {
+    const abilityText = card.ability === 'charge' ? '⚡ Charge' : '💚 Heal +3';
+    const bottomH = h - (artY + artH);
     ctx.fillStyle = card.colorDef.glow;
     ctx.font = `bold italic ${Math.max(6, w * 0.083)}px system-ui`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(abilityText, cx, artY + artH + (h - (artY + artH) - h * 0.22) * 0.5);
+    ctx.fillText(abilityText, cx, artY + artH + bottomH * 0.38);
   }
 
   const isSel = opts.selected || opts.isAttacker;
@@ -1357,18 +1520,18 @@ function drawCardFrame(card, x, y, w, h, opts) {
     const hue = (performance.now() * 0.15) % 360;
     const rc  = `hsl(${hue},100%,70%)`;
     setGlow(rc, 26); ctx.strokeStyle = rc;
-    ctx.lineWidth = Math.max(2, w * 0.055);
+    ctx.lineWidth = Math.max(3, w * 0.062);
   } else if (card.level === 2) {
     setGlow('#FFD700', 20); ctx.strokeStyle = '#FFD700';
-    ctx.lineWidth = Math.max(2, w * 0.042);
+    ctx.lineWidth = Math.max(2.5, w * 0.052);
   } else if (card.ability === 'taunt') {
     setGlow('#FFD700', 12);
     ctx.strokeStyle = '#FFD700';
-    ctx.lineWidth = Math.max(2, w * 0.035);
+    ctx.lineWidth = Math.max(2, w * 0.045);
   } else {
-    setGlow(card.colorDef.glow, 6);
+    setGlow(card.colorDef.glow, 8);
     ctx.strokeStyle = card.colorDef.hex;
-    ctx.lineWidth = Math.max(1.5, w * 0.025);
+    ctx.lineWidth = Math.max(2, w * 0.045);
   }
   drawRoundRect(x, y, w, h, r); ctx.stroke(); clearGlow();
 
@@ -1409,7 +1572,7 @@ function drawCardBadges(card, x, y, w, h, opts, anchorY, tilt) {
 
   // Scale badge sizes by tilt so they fit the compressed card surface
   const tiltScale = hasTilt ? Math.max(tilt, 0.4) : 1;
-  const bR  = Math.max(9, w * 0.155) * tiltScale;
+  const bR  = Math.max(6, w * 0.1) * tiltScale;
   const bx0 = x + bR * 0.85;
   const by0 = projY(y + bR * 0.85);   // center Y projected
   ctx.beginPath(); ctx.arc(bx0, by0, bR, 0, Math.PI * 2);
@@ -1420,7 +1583,7 @@ function drawCardBadges(card, x, y, w, h, opts, anchorY, tilt) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(card.manaCost, bx0, by0);
 
-  const statSz  = Math.max(16, w * 0.32) * tiltScale;
+  const statSz  = Math.max(11, w * 0.22) * tiltScale;
   const statPad = w * 0.04;
   const statRad = statSz * 0.12;
   const statLW  = Math.max(1.5, statSz * 0.09);
@@ -1514,15 +1677,16 @@ function drawBattlefield() {
         continue;
       }
 
-      ctx.save();
-      ctx.setLineDash([4 * devicePixelRatio, 5 * devicePixelRatio]);
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-      ctx.lineWidth = 1.5;
-      drawRoundRect(r.x, r.y, r.w, r.h, r.w * 0.1); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
-
-      if (!card) continue;
+      if (!card) {
+        ctx.save();
+        ctx.setLineDash([4 * devicePixelRatio, 5 * devicePixelRatio]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = 1.5;
+        drawRoundRect(r.x, r.y, r.w, r.h, r.w * 0.1); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+        continue;
+      }
 
       // Gold pulse on valid merge target
       const selCard    = selectedFieldIdx !== null ? playerField[selectedFieldIdx] : null;
@@ -1612,31 +1776,44 @@ function drawHUD() {
   const fs  = Math.max(10, canvas.width * 0.018);
   const cB  = ZONE.centerBar();
   const etR = endTurnRect();
+  const bZ  = ZONE.bottomHud();
 
   // Top HUD bar fill
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(0, 0, canvas.width, ZONE.topHud().h);
 
   // Bottom HUD bar fill
-  const bZ = ZONE.bottomHud();
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(0, bZ.y, canvas.width, bZ.h);
 
-  // Turn label + thinking — right of END TURN inside center bar
-  const isEnemy = currentTurn === 'enemy';
-  const labelX  = etR.x + etR.w + canvas.width * 0.018;
-  ctx.fillStyle = isEnemy ? '#ffaa55' : '#aaffcc';
-  ctx.font      = `bold ${fs}px system-ui`;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('TURN ' + turnNumber, labelX, cB.y + cB.h * 0.38);
+  // ── Turn badge (circular, teal) — left of END TURN in bottom HUD ──────────
+  const badgeR  = bZ.h * 0.38;
+  const badgeX  = etR.x - badgeR * 2.8;
+  const badgeY  = bZ.y + bZ.h * 0.5;
+  const badgeFs = Math.max(8, badgeR * 0.72);
+  setGlow('#00c9b0', 10);
+  ctx.fillStyle = '#0a7c6e';
+  ctx.beginPath(); ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#00e5cc';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2); ctx.stroke();
+  clearGlow();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${badgeFs}px system-ui`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(turnNumber, badgeX, badgeY - badgeFs * 0.35);
+  ctx.font = `${badgeFs * 0.68}px system-ui`;
+  ctx.fillText('Turn', badgeX, badgeY + badgeFs * 0.5);
 
-  if (isEnemy) {
+  // ── Enemy thinking label (center bar) ────────────────────────────────────
+  if (currentTurn === 'enemy') {
     ctx.fillStyle = 'rgba(255,140,60,0.9)';
-    ctx.font      = `${Math.max(9, fs * 0.78)}px system-ui`;
-    ctx.fillText('Enemy thinking…', labelX, cB.y + cB.h * 0.72);
+    ctx.font      = `bold ${Math.max(9, fs * 0.78)}px system-ui`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Enemy thinking…', canvas.width * 0.5, cB.y + cB.h * 0.5);
   }
 
-  // Merge hint — above center bar
+  // ── Merge hint — above center bar ─────────────────────────────────────────
   if (selectedFieldIdx !== null && currentTurn === 'player') {
     const selCard  = playerField[selectedFieldIdx];
     const canMerge = selCard && selCard.level < MAX_LEVEL &&
@@ -1651,32 +1828,135 @@ function drawHUD() {
   }
 }
 
-// ─── Drawing: perspective field grid ─────────────────────────────────────────
+// ─── Drawing: ability tooltip ─────────────────────────────────────────────────
+function drawAbilityTooltip() {
+  let card = null;
+  if (selectedHandIdx !== null && playerHand[selectedHandIdx]) {
+    card = playerHand[selectedHandIdx];
+  } else if (selectedFieldIdx !== null && playerField[selectedFieldIdx]) {
+    card = playerField[selectedFieldIdx];
+  }
+  if (!card || !card.ability) return;
+
+  const desc = ABILITY_DESCRIPTIONS[card.ability];
+  if (!desc) return;
+
+  const cB      = ZONE.centerBar();
+  const padding = 14 * devicePixelRatio;
+  const fs      = Math.max(11, canvas.width * 0.016);
+  ctx.font      = `${fs}px system-ui`;
+  const textW   = ctx.measureText(desc).width;
+  const panelW  = textW + padding * 2;
+  const panelH  = fs * 2.4;
+  const panelX  = canvas.width * 0.04;
+  const panelY  = cB.y - panelH - 10 * devicePixelRatio;
+
+  ctx.fillStyle = 'rgba(10,10,20,0.88)';
+  drawRoundRect(panelX, panelY, panelW, panelH, panelH * 0.22);
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(180,180,255,0.35)';
+  ctx.lineWidth = 1.2;
+  drawRoundRect(panelX, panelY, panelW, panelH, panelH * 0.22);
+  ctx.stroke();
+
+  ctx.fillStyle = '#e8e8ff';
+  ctx.font = `${fs}px system-ui`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(desc, panelX + padding, panelY + panelH * 0.5);
+}
+
+// ─── Drawing: perspective field ───────────────────────────────────────────────
 function drawFlatField() {
-  const eF = ZONE.enemyField();
-  const pF = ZONE.playerField();
-  const cB = ZONE.centerBar();
+  const eF  = ZONE.enemyField();
+  const pF  = ZONE.playerField();
+  const cB  = ZONE.centerBar();
+  const W   = canvas.width;
+  const vpX = W * 0.5;
+  const vpY = cB.y + cB.h * 0.5;   // vanishing-point Y = center of divider bar
 
   ctx.save();
 
-  // Enemy field zone background
-  ctx.fillStyle = 'rgba(0,10,30,0.55)';
-  ctx.fillRect(0, eF.y, canvas.width, eF.h);
+  // ── Player field — trapezoidal mat (near plane, wider at bottom) ────────────
+  // Bottom edge: full width. Top edge: inset W*0.07 on each side.
+  const pInset = W * 0.07;
+  ctx.beginPath();
+  ctx.moveTo(0,            pF.y + pF.h);
+  ctx.lineTo(W,            pF.y + pF.h);
+  ctx.lineTo(W - pInset,   pF.y);
+  ctx.lineTo(pInset,       pF.y);
+  ctx.closePath();
+  const pGrad = ctx.createLinearGradient(0, pF.y + pF.h, 0, pF.y);
+  pGrad.addColorStop(0, 'rgba(0,60,22,0.88)');
+  pGrad.addColorStop(1, 'rgba(0,35,14,0.72)');
+  ctx.fillStyle = pGrad;
+  ctx.fill();
 
-  // Player field zone background
-  ctx.fillStyle = 'rgba(0,20,10,0.55)';
-  ctx.fillRect(0, pF.y, canvas.width, pF.h);
+  // ── Enemy field — trapezoidal mat (far plane, narrower) ────────────────────
+  const eInset = W * 0.22;
+  ctx.beginPath();
+  ctx.moveTo(pInset,       eF.y + eF.h);
+  ctx.lineTo(W - pInset,   eF.y + eF.h);
+  ctx.lineTo(W - eInset,   eF.y);
+  ctx.lineTo(eInset,       eF.y);
+  ctx.closePath();
+  const eGrad = ctx.createLinearGradient(0, eF.y + eF.h, 0, eF.y);
+  eGrad.addColorStop(0, 'rgba(0,22,60,0.72)');
+  eGrad.addColorStop(1, 'rgba(0,12,40,0.88)');
+  ctx.fillStyle = eGrad;
+  ctx.fill();
 
-  // Center bar background
-  ctx.fillStyle = 'rgba(0,0,0,0.72)';
-  ctx.fillRect(0, cB.y, canvas.width, cB.h);
+  // ── Perspective converging rays (vertical grid lines) ──────────────────────
+  ctx.globalAlpha = 0.07;
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  ctx.lineWidth   = 1;
+  const NUM_RAYS  = 10;
+  for (let k = 0; k <= NUM_RAYS; k++) {
+    const t      = k / NUM_RAYS;
+    const nearX  = t * W;
+    const farX   = vpX + (nearX - vpX) * 0.20;   // ray converges 80% toward center
+    ctx.beginPath();
+    ctx.moveTo(nearX, pF.y + pF.h);
+    ctx.lineTo(farX,  vpY);
+    ctx.stroke();
+  }
 
-  // Glowing border lines on center bar
-  setGlow('#88ccff', 8);
-  ctx.strokeStyle = 'rgba(100,180,255,0.45)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(0, cB.y); ctx.lineTo(canvas.width, cB.y); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0, cB.y + cB.h); ctx.lineTo(canvas.width, cB.y + cB.h); ctx.stroke();
+  // ── Horizontal depth lines in player field ─────────────────────────────────
+  for (let k = 1; k <= 3; k++) {
+    const t    = k / 4;
+    const y    = pF.y + pF.h * (1 - t);
+    const inx  = pInset * t;
+    ctx.globalAlpha   = 0.10 + t * 0.06;
+    ctx.strokeStyle   = 'rgba(80,255,140,1)';
+    ctx.lineWidth     = 1;
+    ctx.beginPath();
+    ctx.moveTo(inx, y); ctx.lineTo(W - inx, y); ctx.stroke();
+  }
+
+  // ── Horizontal depth lines in enemy field ──────────────────────────────────
+  for (let k = 1; k <= 3; k++) {
+    const t    = k / 4;
+    const y    = eF.y + eF.h * t;
+    const inx  = pInset + (eInset - pInset) * t;
+    ctx.globalAlpha   = 0.08 + (1 - t) * 0.06;
+    ctx.strokeStyle   = 'rgba(80,140,255,1)';
+    ctx.lineWidth     = 1;
+    ctx.beginPath();
+    ctx.moveTo(inx, y); ctx.lineTo(W - inx, y); ctx.stroke();
+  }
+
+  ctx.globalAlpha = 1;
+
+  // ── Center bar (horizon divider) ────────────────────────────────────────────
+  ctx.fillStyle = 'rgba(0,0,0,0.88)';
+  ctx.fillRect(0, cB.y, W, cB.h);
+
+  setGlow('#88ccff', 10);
+  ctx.strokeStyle = 'rgba(100,180,255,0.55)';
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, cB.y);        ctx.lineTo(W, cB.y);        ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, cB.y + cB.h); ctx.lineTo(W, cB.y + cB.h); ctx.stroke();
   clearGlow();
 
   ctx.restore();
@@ -1698,7 +1978,6 @@ function drawSideZones() {
       ctx.strokeStyle = color; ctx.lineWidth = 1.5;
       drawRoundRect(bx, cy - ch * 0.5, cw, ch, cw * 0.1); ctx.stroke();
     });
-    // Labels
     ctx.fillStyle = 'rgba(255,255,255,0.25)';
     ctx.font = `bold ${Math.max(7, cw * 0.18)}px system-ui`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1706,46 +1985,96 @@ function drawSideZones() {
     ctx.fillText('GY',   gyX + cw * 0.5, cy - ch * 0.15);
   });
   ctx.restore();
+
+  // ── Card detail preview in right GY zone (player side) ────────────────────
+  const preview = selectedHandIdx !== null  ? playerHand[selectedHandIdx]
+               :  selectedFieldIdx !== null ? playerField[selectedFieldIdx]
+               :  null;
+  if (!preview) return;
+
+  const fzP  = ZONE.playerField();
+  const dpr  = devicePixelRatio;
+  const pw   = Math.min(canvas.width * 0.18, 140 * dpr);  // preview card width
+  const ph   = pw * 1.45;
+  const pad  = 10 * dpr;
+  const px   = canvas.width - pw - pad;
+  const py   = fzP.y + (fzP.h - ph) * 0.5;
+
+  // Panel background
+  ctx.save();
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = 'rgba(5,5,20,0.88)';
+  drawRoundRect(px - pad * 0.5, py - pad * 0.5, pw + pad, ph + pad * 4.5, pw * 0.08);
+  ctx.fill();
+  ctx.strokeStyle = preview.colorDef.hex + '88';
+  ctx.lineWidth = 1.5;
+  drawRoundRect(px - pad * 0.5, py - pad * 0.5, pw + pad, ph + pad * 4.5, pw * 0.08);
+  ctx.stroke();
+  ctx.restore();
+
+  // Card art + frame
+  drawCardShape(preview, px, py, pw, ph, {});
+
+  // Stats below card
+  const statsY = py + ph + pad * 0.8;
+  const fs     = Math.max(7, pw * 0.08);
+  ctx.save();
+  ctx.font = `bold ${fs}px system-ui`;
+  ctx.textBaseline = 'middle';
+
+  // Mana cost
+  ctx.fillStyle = '#88aaff';
+  ctx.textAlign = 'left';
+  ctx.fillText(`⬡ ${preview.manaCost}`, px, statsY);
+
+  // ATK
+  ctx.fillStyle = '#ff8866';
+  ctx.textAlign = 'center';
+  ctx.fillText(`⚔ ${preview.attack}`, px + pw * 0.5, statsY);
+
+  // DEF / current HP
+  ctx.fillStyle = '#66ff99';
+  ctx.textAlign = 'right';
+  ctx.fillText(`❤ ${preview.defense}`, px + pw, statsY);
+
+  // Ability description
+  if (preview.ability && ABILITY_DESCRIPTIONS[preview.ability]) {
+    ctx.fillStyle = preview.colorDef.glow;
+    ctx.font = `${Math.max(7, pw * 0.09)}px system-ui`;
+    ctx.textAlign = 'center';
+    const desc   = ABILITY_DESCRIPTIONS[preview.ability];
+    const maxW   = pw + pad;
+    const words  = desc.split(' ');
+    let line = '', lineY = statsY + fs * 1.6;
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > maxW && line) {
+        ctx.fillText(line, px + pw * 0.5, lineY);
+        line = word; lineY += fs * 1.3;
+      } else { line = test; }
+    }
+    if (line) ctx.fillText(line, px + pw * 0.5, lineY);
+  }
+  ctx.restore();
 }
 
 // ─── Drawing: background ─────────────────────────────────────────────────────
 function drawBackground() {
-  if (bgImage.complete && bgImage.naturalWidth) {
-    ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  } else {
-    ctx.fillStyle = '#09090f';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   drawFlatField();
   drawStars();
   drawSideZones();
 
-  // ── Center bar: END TURN + mana ──────────────────────────────────────────
-  const etR    = endTurnRect();
+  // ── Center bar: mana dots (centered) ────────────────────────────────────
   const cB     = ZONE.centerBar();
-  const canEnd = currentTurn === 'player' && !animLock && !gameOver;
-  setGlow(canEnd ? '#3399ff' : 'transparent', canEnd ? 14 : 0);
-  ctx.fillStyle = canEnd ? '#1455a0' : '#222230';
-  drawRoundRect(etR.x, etR.y, etR.w, etR.h, etR.h * 0.3); ctx.fill();
-  ctx.strokeStyle = canEnd ? '#55aaff' : '#333344';
-  ctx.lineWidth = 2;
-  drawRoundRect(etR.x, etR.y, etR.w, etR.h, etR.h * 0.3); ctx.stroke();
-  clearGlow();
-  ctx.fillStyle = canEnd ? '#ffffff' : 'rgba(255,255,255,0.25)';
-  ctx.font = `bold ${Math.max(10, etR.h * 0.44)}px system-ui`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('END TURN', etR.cx, etR.cy);
-
-  // Mana dots (left of END TURN in center bar)
   const dotR   = Math.max(5, cB.h * 0.18);
   const dotGap = dotR * 2.5;
   const manaY  = cB.y + cB.h * 0.5;
-  const manaStartX = etR.x - dotGap * playerMaxMana - dotR * 1.5;
+  const totalManaW = dotGap * playerMaxMana;
+  const manaStartX = canvas.width * 0.5 - totalManaW * 0.5 + dotR;
   for (let i = 0; i < playerMaxMana; i++) {
-    const mx = manaStartX + dotR + i * dotGap;
+    const mx = manaStartX + i * dotGap;
     ctx.beginPath(); ctx.arc(mx, manaY, dotR, 0, Math.PI * 2);
     if (i < playerMana) {
       setGlow('#44aaff', 8); ctx.fillStyle = '#1E90FF';
@@ -1755,48 +2084,141 @@ function drawBackground() {
     ctx.fill(); clearGlow();
   }
 
-  // ── Enemy avatar + HP bar (top HUD, left side) ───────────────────────────
-  const tZ   = ZONE.topHud();
+  // ── Bottom HUD: END TURN button (animated when active) ───────────────────
+  const etR    = endTurnRect();
+  const canEnd = currentTurn === 'player' && !animLock && !gameOver;
+  const r      = etR.h * 0.45;
+
+  if (canEnd) {
+    const hover = endTurnHover;
+
+    // Button body — flat gold, no animation at rest
+    ctx.fillStyle = '#c87800';
+    drawRoundRect(etR.x, etR.y, etR.w, etR.h, r); ctx.fill();
+
+    // Hover: animated marching-dashes border
+    if (hover) {
+      const dashLen  = etR.h * 0.55;
+      const dashGap  = etR.h * 0.35;
+      const speed    = (gameNow * 0.08) % (dashLen + dashGap);
+      ctx.save();
+      ctx.strokeStyle = '#ffe066';
+      ctx.lineWidth   = 2.5;
+      ctx.setLineDash([dashLen, dashGap]);
+      ctx.lineDashOffset = -speed;
+      drawRoundRect(etR.x, etR.y, etR.w, etR.h, r); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    } else {
+      // Subtle static border at rest
+      ctx.strokeStyle = 'rgba(255,200,80,0.35)';
+      ctx.lineWidth   = 1.5;
+      drawRoundRect(etR.x, etR.y, etR.w, etR.h, r); ctx.stroke();
+    }
+
+    // Click ripple
+    const rippleAge = gameNow - endTurnPress;
+    if (rippleAge < 350) {
+      const rp = rippleAge / 350;
+      ctx.save();
+      ctx.globalAlpha = (1 - rp) * 0.45;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth   = 2;
+      drawRoundRect(etR.x - rp * 12, etR.y - rp * 8, etR.w + rp * 24, etR.h + rp * 16, r + rp * 10);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Label
+    ctx.fillStyle    = '#ffffff';
+    ctx.font         = `bold ${Math.max(12, etR.h * 0.52)}px system-ui`;
+    ctx.textAlign    = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('END TURN', etR.cx, etR.cy);
+
+  } else {
+    // Disabled state — clearly muted, with "WAIT" sub-label during enemy turn
+    ctx.fillStyle = 'rgba(40,30,10,0.75)';
+    drawRoundRect(etR.x, etR.y, etR.w, etR.h, r); ctx.fill();
+    ctx.strokeStyle = 'rgba(120,90,20,0.4)';
+    ctx.lineWidth   = 1.5;
+    drawRoundRect(etR.x, etR.y, etR.w, etR.h, r); ctx.stroke();
+
+    const labelSize = Math.max(12, etR.h * 0.46);
+    ctx.fillStyle   = 'rgba(255,255,255,0.2)';
+    ctx.font        = `bold ${labelSize}px system-ui`;
+    ctx.textAlign   = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('END TURN', etR.cx, etR.cy - etR.h * 0.12);
+
+    // "ENEMY TURN" sub-label when it's the enemy's phase
+    if (phase === 'enemy') {
+      const dot = (Math.floor(gameNow / 500) % 3) + 1;
+      ctx.fillStyle = 'rgba(255,100,100,0.55)';
+      ctx.font      = `${Math.max(8, labelSize * 0.62)}px system-ui`;
+      ctx.fillText('ENEMY TURN' + '.'.repeat(dot), etR.cx, etR.cy + etR.h * 0.26);
+    }
+  }
+
+  // ── Enemy avatar + HP dots (top HUD, RIGHT side) ─────────────────────────
+  const tZ    = ZONE.topHud();
   const avPad = 8 * devicePixelRatio;
   const avSz  = Math.min(tZ.h * 0.82, 48 * devicePixelRatio);
-  const avY   = tZ.y + (tZ.h - avSz) * 0.5;
+  const avCX  = canvas.width - avPad - avSz * 0.5;
+  const avCY  = tZ.y + tZ.h * 0.5;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(avCX, avCY, avSz * 0.5, 0, Math.PI * 2);
+  ctx.clip();
   setGlow('#ff4444', 12);
   ctx.fillStyle = '#2a0808';
-  drawRoundRect(avPad, avY, avSz, avSz, avSz * 0.2); ctx.fill();
+  ctx.fillRect(canvas.width - avPad - avSz, tZ.y + (tZ.h - avSz) * 0.5, avSz, avSz);
   ctx.fillStyle = 'rgba(255,100,100,0.9)';
   ctx.font = `bold ${avSz * 0.6}px system-ui`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('👾', avPad + avSz * 0.5, avY + avSz * 0.5);
+  ctx.fillText('👾', avCX, avCY);
   clearGlow();
-  const eBarX = avPad + avSz + 8 * devicePixelRatio;
-  const eBarW = Math.min(canvas.width * 0.22, 140 * devicePixelRatio);
-  const eBarH = Math.max(9, avSz * 0.28);
-  const eBarY = avY + (avSz - eBarH) * 0.5;
-  drawHealthBar(eBarX, eBarY, eBarW, eBarH, enemyHP / MAX_HP, '#ff4444', MAX_HP);
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.font = `bold ${Math.max(9, avSz * 0.32)}px system-ui`;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('ENEMY  LP ' + enemyHP, eBarX, avY + avSz * 0.72);
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,80,80,0.7)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(avCX, avCY, avSz * 0.5, 0, Math.PI * 2); ctx.stroke();
 
-  // ── Player avatar + HP bar (bottom HUD, left side) ───────────────────────
-  const bZ   = ZONE.bottomHud();
-  const pAvY = bZ.y + (bZ.h - avSz) * 0.5;
+  const eDotsW   = Math.min(canvas.width * 0.38, 210 * devicePixelRatio);
+  const eDotsEndX = avCX - avSz * 0.5 - 10 * devicePixelRatio;
+  drawHpDots(eDotsEndX - eDotsW * 0.5, avCY, eDotsW, enemyHP, MAX_HP, '#ff5555');
+
+  // ── Player avatar + HP dots + name (bottom HUD, left side) ───────────────
+  const bZ    = ZONE.bottomHud();
+  const pAvSz = Math.min(bZ.h * 0.78, 52 * devicePixelRatio);
+  const pAvCX = avPad + pAvSz * 0.5;
+  const pAvCY = bZ.y + bZ.h * 0.5;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(pAvCX, pAvCY, pAvSz * 0.5, 0, Math.PI * 2);
+  ctx.clip();
   setGlow('#22DD55', 12);
   ctx.fillStyle = '#082208';
-  drawRoundRect(avPad, pAvY, avSz, avSz, avSz * 0.2); ctx.fill();
-  ctx.font = `bold ${avSz * 0.6}px system-ui`;
+  ctx.fillRect(avPad, bZ.y + (bZ.h - pAvSz) * 0.5, pAvSz, pAvSz);
+  ctx.font = `bold ${pAvSz * 0.6}px system-ui`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('🧙', avPad + avSz * 0.5, pAvY + avSz * 0.5);
+  ctx.fillText('🧙', pAvCX, pAvCY);
   clearGlow();
-  const pBarX = avPad + avSz + 8 * devicePixelRatio;
-  const pBarW = Math.min(canvas.width * 0.22, 140 * devicePixelRatio);
-  const pBarH = Math.max(9, avSz * 0.28);
-  const pBarY = pAvY + (avSz - pBarH) * 0.5;
-  drawHealthBar(pBarX, pBarY, pBarW, pBarH, playerHP / MAX_HP, '#22DD55', MAX_HP);
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.font = `bold ${Math.max(9, avSz * 0.32)}px system-ui`;
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(34,221,85,0.7)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(pAvCX, pAvCY, pAvSz * 0.5, 0, Math.PI * 2); ctx.stroke();
+
+  const pDotsX = avPad + pAvSz + 10 * devicePixelRatio;
+  const pDotsW = Math.min(canvas.width * 0.38, 210 * devicePixelRatio);
+  const pDotsCX = pDotsX + pDotsW * 0.5;
+
+  const nameFs = Math.max(9, pAvSz * 0.28);
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.font = `bold ${nameFs}px system-ui`;
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('YOU  LP ' + playerHP, pBarX, pAvY + avSz * 0.72);
+  ctx.fillText(playerName, pDotsX, pAvCY - nameFs * 1.1);
+
+  drawHpDots(pDotsCX, pAvCY + nameFs * 0.2, pDotsW, playerHP, MAX_HP, '#22DD55');
 }
 
 // ─── Game over overlay ────────────────────────────────────────────────────────
@@ -1831,6 +2253,8 @@ let lastTime = 0;
 function loop(ts) {
   const dt = Math.min(ts - lastTime, 50);
   lastTime = ts;
+  gameNow = ts;
+  window.CharacterField?.syncSlots();
 
   // Shake
   if (shake.elapsed < shake.duration) shake.elapsed += dt;
@@ -1851,6 +2275,7 @@ function loop(ts) {
 
   drawHand();
   drawHUD();
+  drawAbilityTooltip();
 
   // Floating drag card — drawn on top of everything
   if (dragState && dragState.isDragging) {

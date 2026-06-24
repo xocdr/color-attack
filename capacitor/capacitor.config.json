@@ -1,0 +1,14 @@
+{
+  "appId": "com.example.colorattackdemo",
+  "appName": "Ascend",
+  "webDir": "../",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0
+    }
+  }
+}
