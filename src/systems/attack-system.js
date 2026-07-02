@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 
-export function startAttack(monster, targetMesh) {
+export function startAttack(monster, targetMesh, onHit) {
   monster._attacking    = true;
   monster._atProgress   = 0;
   monster._atTarget     = new THREE.Vector3(targetMesh.position.x, 0, targetMesh.position.z);
   monster._atBasePos    = monster.position.clone();
   monster._atBaseFacing = monster.rotation.y;
+  monster._atTargetMesh = targetMesh;
+  monster._atOnHit      = onHit || null;
 
   if (monster.userData.isFireDrake || monster.userData.isTideLord || monster.userData.isSporeKin) {
     monster._atType  = 'ranged';

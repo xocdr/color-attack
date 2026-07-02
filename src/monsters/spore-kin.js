@@ -4,7 +4,7 @@ const _mat = (color, emissive, emInt = 0.3, metal = 0, rough = 0.8) =>
   new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: emInt, metalness: metal, roughness: rough });
 const _mesh = (geo, mat) => new THREE.Mesh(geo, mat);
 
-export const SPORE_STATS = { name: 'Spore Kin', icon: '🍄', cost: 1, auraColor: 0x44ff44 };
+export const SPORE_STATS = { name: 'Spore Kin', icon: '🍄', cost: 1, auraColor: 0x44ff44, atk: 2, hp: 7 };
 
 export function makeSporeKin() {
   const g = new THREE.Group();
@@ -100,7 +100,7 @@ export function animateSporeAttack(monster, t, delta, spawnProjectile) {
       monster._atPhase = 'fire'; monster._atProgress = 0;
       const from = monster.position.clone(); from.y += 1.1;
       const to   = monster._atTarget.clone(); to.y  += 0.8;
-      if (spawnProjectile) spawnProjectile('spore', from, to);
+      if (spawnProjectile) spawnProjectile('spore', from, to, () => monster._atOnHit?.(monster, monster._atTargetMesh));
     }
 
   } else if (monster._atPhase === 'fire') {

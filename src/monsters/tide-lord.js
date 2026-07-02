@@ -5,7 +5,7 @@ const _mat = (color, emissive, emInt = 0.3, metal = 0, rough = 0.8) =>
 const _mesh = (geo, mat) => new THREE.Mesh(geo, mat);
 const _attackDir = new THREE.Vector3();
 
-export const TIDE_STATS = { name: 'Tide Lord', icon: '🌊', cost: 4, auraColor: 0x0088ff };
+export const TIDE_STATS = { name: 'Tide Lord', icon: '🌊', cost: 4, auraColor: 0x0088ff, atk: 3, hp: 10 };
 
 export function makeTideLord() {
   const g = new THREE.Group();
@@ -101,7 +101,7 @@ export function animateTideAttack(monster, t, delta, spawnProjectile) {
       monster._atPhase = 'fire'; monster._atProgress = 0;
       const from = monster.position.clone(); from.y += 1.2;
       const to   = monster._atTarget.clone(); to.y  += 0.8;
-      if (spawnProjectile) spawnProjectile('water', from, to);
+      if (spawnProjectile) spawnProjectile('water', from, to, () => monster._atOnHit?.(monster, monster._atTargetMesh));
     }
 
   } else if (monster._atPhase === 'fire') {

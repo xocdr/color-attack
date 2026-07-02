@@ -20,7 +20,7 @@ export function createProjectileSystem(scene) {
     },
   };
 
-  function spawnProjectile(type, fromPos, toPos) {
+  function spawnProjectile(type, fromPos, toPos, onHit) {
     const cfg = CONFIGS[type];
     if (!cfg) return;
 
@@ -45,6 +45,7 @@ export function createProjectileSystem(scene) {
       to:       toPos.clone(),
       progress: 0,
       duration: cfg.duration,
+      onHit:    onHit || null,
     });
   }
 
@@ -53,6 +54,7 @@ export function createProjectileSystem(scene) {
       const p = projectiles[i];
       p.progress += delta / p.duration;
       if (p.progress >= 1) {
+        if (p.onHit) p.onHit();
         scene.remove(p.mesh);
         p.mesh.geometry.dispose();
         p.mesh.material.dispose();

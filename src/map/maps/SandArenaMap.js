@@ -123,7 +123,7 @@ const SAND_ARENA_CONFIG = {
   pillarCorners:  [[-11,-11],[11,-11],[-11,11],[11,11]],
   pillarTilts:    [0.025, -0.018, -0.022, 0.015],
 
-  dustCount:  120,
+  dustCount:  30,
   dustBounds: { x: 24, y: { min: 0.3, max: 4.8 }, z: 24 },
 };
 
@@ -168,10 +168,10 @@ export class SandArenaMap extends MapInterface {
     const sun = new THREE.DirectionalLight(lp.sunColor, lp.sunIntensity);
     sun.position.set(lp.sunPosition.x, lp.sunPosition.y, lp.sunPosition.z);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(512, 512);
     sun.shadow.camera.near  = 0.5; sun.shadow.camera.far   = 80;
-    sun.shadow.camera.left  = sun.shadow.camera.bottom = -20;
-    sun.shadow.camera.right = sun.shadow.camera.top    =  20;
+    sun.shadow.camera.left  = sun.shadow.camera.bottom = -14;
+    sun.shadow.camera.right = sun.shadow.camera.top    =  14;
     this._add(sun);
     const fill = new THREE.DirectionalLight(lp.fillColor, lp.fillIntensity);
     fill.position.set(lp.fillPosition.x, lp.fillPosition.y, lp.fillPosition.z);
@@ -322,9 +322,9 @@ export class SandArenaMap extends MapInterface {
   }
 
   _buildTorches(torchPositions) {
-    const ironMat  = new THREE.MeshStandardMaterial({ color: 0x6b4c1a, roughness: 0.7, metalness: 0.5 });
-    const stoneMat = new THREE.MeshStandardMaterial({ color: 0xd4b483, roughness: 0.8 });
-    const fireMat  = new THREE.MeshStandardMaterial({ color: 0xff9900, emissive: 0xff6600, emissiveIntensity: 4.0, transparent: true, opacity: 0.92 });
+    const ironMat  = new THREE.MeshLambertMaterial({ color: 0x6b4c1a });
+    const stoneMat = new THREE.MeshLambertMaterial({ color: 0xd4b483 });
+    const fireMat  = new THREE.MeshBasicMaterial({ color: 0xff7700, transparent: true, opacity: 0.92 });
 
     torchPositions.forEach(([x, z], idx) => {
       const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 0.8, 8), stoneMat);
@@ -335,17 +335,19 @@ export class SandArenaMap extends MapInterface {
       bowl.position.set(x, 3.8, z); this._add(bowl);
       const flame = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.75, 7), fireMat.clone());
       flame.position.set(x, 4.35, z); this._add(flame); this._flames.push(flame);
-      const tl = new THREE.PointLight(0xff8833, 2.2, 14);
-      tl.position.set(x, 4.5, z); this._add(tl);
-      this._torchLights.push({ light: tl, baseIntensity: 2.2, phase: idx * 1.3 });
+      if (idx % 2 === 0) {
+        const tl = new THREE.PointLight(0xff8833, 3.0, 18);
+        tl.position.set(x, 4.5, z); this._add(tl);
+        this._torchLights.push({ light: tl, baseIntensity: 3.0, phase: idx * 1.3 });
+      }
     });
   }
 
   _buildPillars(pillarCorners, pillarTilts) {
     const weatheredTex = makeWeatheredStoneTexture();
-    const pillarMat = new THREE.MeshStandardMaterial({ map: weatheredTex, color: 0xb8a080, roughness: 1.0, metalness: 0.0 });
-    const capMat    = new THREE.MeshStandardMaterial({ map: weatheredTex, color: 0xa08060, roughness: 1.0 });
-    const chunkMat  = new THREE.MeshStandardMaterial({ color: 0x2a1e0a, roughness: 1 });
+    const pillarMat = new THREE.MeshLambertMaterial({ map: weatheredTex, color: 0xb8a080 });
+    const capMat    = new THREE.MeshLambertMaterial({ map: weatheredTex, color: 0xa08060 });
+    const chunkMat  = new THREE.MeshLambertMaterial({ color: 0x2a1e0a });
 
     pillarCorners.forEach(([x, z], idx) => {
       const group = new THREE.Group();

@@ -5,7 +5,7 @@ const _mat = (color, emissive, emInt = 0.3, metal = 0, rough = 0.8) =>
 const _mesh = (geo, mat) => new THREE.Mesh(geo, mat);
 const _attackDir = new THREE.Vector3();
 
-export const DRAKE_STATS = { name: 'Fire Drake', icon: '🐉', cost: 3, auraColor: 0xff4400 };
+export const DRAKE_STATS = { name: 'Fire Drake', icon: '🐉', cost: 3, auraColor: 0xff4400, atk: 4, hp: 8 };
 
 export function makeFireDrake() {
   const g = new THREE.Group();
@@ -97,7 +97,7 @@ export function animateDrakeAttack(monster, t, delta, spawnProjectile) {
       monster._atPhase = 'fire'; monster._atProgress = 0;
       const from = monster.position.clone(); from.y += 0.9;
       const to   = monster._atTarget.clone(); to.y  += 0.8;
-      if (spawnProjectile) spawnProjectile('fire', from, to);
+      if (spawnProjectile) spawnProjectile('fire', from, to, () => monster._atOnHit?.(monster, monster._atTargetMesh));
     }
 
   } else if (monster._atPhase === 'fire') {

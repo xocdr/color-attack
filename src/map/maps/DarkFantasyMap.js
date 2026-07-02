@@ -55,7 +55,7 @@ const DARK_FANTASY_CONFIG = {
   pillarCorners:  [[-11,-11],[11,-11],[-11,11],[11,11]],
   pillarTilts:    [0.025, -0.018, -0.022, 0.015],
 
-  emberCount:  180,
+  emberCount:  40,
   emberBounds: { x: 26, y: { min: 0.2, max: 6.5 }, z: 26 },
 };
 
@@ -118,10 +118,8 @@ export class DarkFantasyMap extends MapInterface {
     this._crackLight.position.set(0, 0.3, 0);
     this._add(this._crackLight);
 
-    // Purple ambient fills
-    const purpleA = new THREE.PointLight(0x6600aa, 1.2, 30); purpleA.position.set(0, 8, 0);   this._add(purpleA);
-    const purpleB = new THREE.PointLight(0x330066, 0.8, 20); purpleB.position.set(-6, 4, -6); this._add(purpleB);
-    const purpleC = new THREE.PointLight(0x440088, 0.6, 20); purpleC.position.set( 6, 4,  6); this._add(purpleC);
+    // Purple ambient fill — one central light replaces three
+    const purpleA = new THREE.PointLight(0x5500aa, 1.4, 35); purpleA.position.set(0, 8, 0); this._add(purpleA);
 
     // Lightning global fill (starts at 0, set by timer in tick)
     this._lightningLight = new THREE.DirectionalLight(0xccddff, 0);
@@ -260,19 +258,6 @@ export class DarkFantasyMap extends MapInterface {
     );
     moonGlow.position.copy(moon.position); moonGlow.position.z += 1; this._add(moonGlow);
 
-    // Stars
-    const starCount = 600;
-    const starPos   = new Float32Array(starCount * 3);
-    for (let i = 0; i < starCount; i++) {
-      const theta = Math.random() * Math.PI * 2, phi = Math.acos(2 * Math.random() - 1);
-      starPos[i*3]   = 100 * Math.sin(phi) * Math.cos(theta);
-      starPos[i*3+1] = 100 * Math.cos(phi);
-      starPos[i*3+2] = 100 * Math.sin(phi) * Math.sin(theta);
-    }
-    const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-    this._add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xaaaacc, size: 0.25, sizeAttenuation: true })));
-
     // Clouds — ONE shared material for all puffs (was 30+ .clone() calls)
     const cloudMat = new THREE.MeshBasicMaterial({ color: 0x2a1030, transparent: true, opacity: 0.35, depthWrite: false });
     [
@@ -314,7 +299,7 @@ export class DarkFantasyMap extends MapInterface {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(4, 4);
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(44, 44),
-      new THREE.MeshStandardMaterial({ map: tex, color: 0x1a0808, roughness: 1.0, metalness: 0.1 }),
+      new THREE.MeshLambertMaterial({ map: tex, color: 0x1a0808 }),
     );
     floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; this._add(floor);
   }
@@ -342,9 +327,9 @@ export class DarkFantasyMap extends MapInterface {
   }
 
   _buildTorches(torchPositions) {
-    const ironMat  = new THREE.MeshStandardMaterial({ color: 0x2a1a2a, roughness: 0.5, metalness: 0.7 });
-    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x1a0a1a, roughness: 0.9 });
-    const fireMat  = new THREE.MeshStandardMaterial({ color: 0xaa00ff, emissive: 0x7700bb, emissiveIntensity: 4.5, transparent: true, opacity: 0.9 });
+    const ironMat  = new THREE.MeshLambertMaterial({ color: 0x2a1a2a });
+    const stoneMat = new THREE.MeshLambertMaterial({ color: 0x1a0a1a });
+    const fireMat  = new THREE.MeshBasicMaterial({ color: 0xaa00ff, transparent: true, opacity: 0.9 });
 
     torchPositions.forEach(([x, z], idx) => {
       const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.38, 0.85, 8), stoneMat);
@@ -355,17 +340,17 @@ export class DarkFantasyMap extends MapInterface {
       bowl.position.set(x, 4.0, z); this._add(bowl);
       const flame = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.85, 7), fireMat.clone());
       flame.position.set(x, 4.65, z); this._add(flame); this._flames.push(flame);
-      const tl = new THREE.PointLight(0x8800cc, 2.0, 12);
-      tl.position.set(x, 4.8, z); this._add(tl);
-      this._torchLights.push({ light: tl, baseIntensity: 2.0, phase: idx * 1.7 });
-      const runeGlow = new THREE.PointLight(0x440088, 0.6, 4);
-      runeGlow.position.set(x, 0.5, z); this._add(runeGlow);
+      if (idx % 2 === 0) {
+        const tl = new THREE.PointLight(0x8800cc, 2.8, 16);
+        tl.position.set(x, 4.8, z); this._add(tl);
+        this._torchLights.push({ light: tl, baseIntensity: 2.8, phase: idx * 1.7 });
+      }
     });
   }
 
   _buildPillars(pillarCorners, pillarTilts) {
-    const darkStoneMat = new THREE.MeshStandardMaterial({ color: 0x0d0808, roughness: 1.0, metalness: 0.0 });
-    const capMat       = new THREE.MeshStandardMaterial({ color: 0x150b15, roughness: 1.0 });
+    const darkStoneMat = new THREE.MeshLambertMaterial({ color: 0x0d0808 });
+    const capMat       = new THREE.MeshLambertMaterial({ color: 0x150b15 });
     const runeMat      = new THREE.MeshBasicMaterial({ color: 0x660088, transparent: true, opacity: 0.6 });
 
     pillarCorners.forEach(([x, z], idx) => {

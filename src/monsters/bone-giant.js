@@ -4,7 +4,7 @@ const _mat = (color, emissive, emInt = 0.3, metal = 0, rough = 0.8) =>
   new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: emInt, metalness: metal, roughness: rough });
 const _mesh = (geo, mat) => new THREE.Mesh(geo, mat);
 
-export const BONE_STATS = { name: 'Bone Giant', icon: '💀', cost: 5, auraColor: 0x00ff88 };
+export const BONE_STATS = { name: 'Bone Giant', icon: '💀', cost: 5, auraColor: 0x00ff88, atk: 6, hp: 15 };
 
 export function makeBoneGiant() {
   const g = new THREE.Group();
@@ -108,7 +108,7 @@ export function animateBoneAttack(monster, t, delta) {
     const stomp = Math.abs(Math.sin(e * Math.PI * 5));
     if (bp.armL) bp.armL.rotation.z = 0.5 + stomp * 0.6;
     if (bp.armR) bp.armR.rotation.z = -0.5 - stomp * 0.6;
-    if (e >= 1) { monster._atPhase = 'slam'; monster._atProgress = 0; }
+    if (e >= 1) { monster._atPhase = 'slam'; monster._atProgress = 0; monster._atOnHit?.(monster, monster._atTargetMesh); }
 
   } else if (monster._atPhase === 'slam') {
     const e = Math.min(monster._atProgress / SLAM_DUR, 1);

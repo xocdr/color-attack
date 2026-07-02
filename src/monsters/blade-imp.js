@@ -5,7 +5,7 @@ const _mat = (color, emissive, emInt = 0.3, metal = 0, rough = 0.8) =>
 const _mesh = (geo, mat) => new THREE.Mesh(geo, mat);
 const _attackDir = new THREE.Vector3();
 
-export const IMP_STATS = { name: 'Blade Imp', icon: '🗡️', cost: 2, auraColor: 0xaa00ff };
+export const IMP_STATS = { name: 'Blade Imp', icon: '🗡️', cost: 2, auraColor: 0xaa00ff, atk: 5, hp: 5 };
 
 export function makeBladeImp() {
   const g = new THREE.Group();
@@ -158,7 +158,7 @@ export function animateImpAttack(monster, t, delta) {
       if (ip.legs)     { ip.legs[0] && (ip.legs[0].rotation.z =  run * 0.5); ip.legs[1] && (ip.legs[1].rotation.z = -run * 0.5); }
       if (ip.swordArm) ip.swordArm.rotation.z = -run * 0.3;
     }
-    if (e >= 1) { monster._atPhase = 'slash'; monster._atProgress = 0; }
+    if (e >= 1) { monster._atPhase = 'slash'; monster._atProgress = 0; monster._atOnHit?.(monster, monster._atTargetMesh); }
 
   } else if (monster._atPhase === 'slash') {
     const e  = Math.min(monster._atProgress / SLASH_DUR, 1);

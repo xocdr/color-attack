@@ -499,104 +499,303 @@ function mergeEnemyFromHand(handCard, fieldIdx) {
 }
 
 // ─── Enemy AI ─────────────────────────────────────────────────────────────────
+
+// 0 = beginner, 1 = normal, 2 = advanced
+const AI_DIFFICULTY = 1;
+const DIFFICULTY_COMBO_WEIGHT   = [0.0,      0.5,   1.0  ];
+const DIFFICULTY_HOLD_THRESHOLD = [Infinity, -4,    -1   ];
+const DIFFICULTY_MAX_PLAYS      = [1,         5,     5   ];
+const DIFFICULTY_MERGE_LIMIT    = [1,         2,     3   ];
+const DIFFICULTY_ADAPTIVE       = [false,     false, true ];
+
+function deriveFieldStats(field) {
+  const cards = field.filter(Boolean);
+  return {
+    totalAtk:  cards.reduce((s, c) => s + c.attack,  0),
+    totalDef:  cards.reduce((s, c) => s + c.defense, 0),
+    levelSum:  cards.reduce((s, c) => s + (c.level - 1), 0),
+    hasTaunt:  cards.some(c => c.ability === 'taunt'),
+    healCount: cards.filter(c => c.ability === 'heal').length,
+    count:     cards.length,
+  };
+}
+
+function aiEvaluateBoard(snap) {
+  let score = 0;
+
+  const hpDiff = snap.enemyHP - snap.playerHP;
+  const hpWeight = snap.enemyHP < 8 ? 4.5
+                 : snap.playerHP < 8 ? 1.5
+                 : 2.5;
+  score += hpDiff * hpWeight;
+
+  const ef = deriveFieldStats(snap.enemyField);
+  const pf = deriveFieldStats(snap.playerField);
+
+  score += ef.totalAtk  * 1.2;
+  score += ef.totalDef  * 0.55;
+  score += ef.levelSum  * 1.8;
+  score += (ef.hasTaunt ? 3.5 : 0);
+  score += ef.healCount * 2.5;
+
+  score -= pf.totalAtk  * 1.4;
+  score -= (pf.hasTaunt ? 5.0 : 0);
+  score -= pf.healCount * 1.5;
+
+  if (pf.totalAtk >= snap.enemyHP) score -= 12;
+  if (ef.totalAtk >= snap.playerHP) score += 15;
+
+  score += (snap.enemyHandLen - snap.playerHandLen) * 0.9;
+  score += snap.enemyManaUsed * 0.6;
+
+  return score;
+}
+
+function aiThreatAssess(card) {
+  if (!card) return 0;
+  let t = card.attack * 1.8 + card.defense * 0.4 + (card.level - 1) * 2.5;
+  if (card.ability === 'charge') t += 5;
+  if (card.ability === 'taunt')  t += 4;
+  if (card.ability === 'heal')   t += 2.5;
+  return t;
+}
+
+function aiGetSynergyBonus(card, snapEnemyField) {
+  const field = snapEnemyField.filter(Boolean);
+  let bonus = 0;
+  const hasTaunt  = field.some(c => c.ability === 'taunt');
+  const hasHeal   = field.some(c => c.ability === 'heal');
+  const attackers = field.filter(c => c.attack >= 3).length;
+
+  if (card.ability === 'heal'   && hasTaunt)         bonus += 6;
+  if (card.ability === 'taunt'  && hasHeal)           bonus += 6;
+  if (card.ability === 'charge' && attackers >= 2)    bonus += 6;
+  if (card.ability === 'heal'   && field.length >= 3) bonus += 3;
+
+  const mergeTarget = field.find(c => c.id === card.id && c.level < MAX_LEVEL);
+  if (mergeTarget) bonus += 10 + mergeTarget.level * 3;
+
+  const playerHasTaunt = playerField.some(c => c && c.ability === 'taunt');
+  if (playerHasTaunt && card.attack >= 4) bonus += 4;
+
+  return bonus * DIFFICULTY_COMBO_WEIGHT[AI_DIFFICULTY];
+}
+
+function aiApplyNoise(score) {
+  if (AI_DIFFICULTY === 0) return score * (0.65 + Math.random() * 0.7);
+  if (AI_DIFFICULTY === 1) return score * (0.92 + Math.random() * 0.16);
+  return score;
+}
+
+function aiMakeSnap() {
+  return {
+    enemyHP, playerHP,
+    enemyMana, enemyMaxMana,
+    enemyManaUsed: enemyMaxMana - enemyMana,
+    enemyField:    [...enemyField],
+    playerField:   [...playerField],
+    enemyHandLen:  enemyHand.length,
+    playerHandLen: playerHand.length,
+  };
+}
+
 function runEnemyAI() {
   if (gameOver) return;
   let delay = 100;
 
-  // ── Step 1: Field-to-field merges (free power spike) ──────────────────────
-  // Snapshot which field slots share the same color
-  const fieldMerges = [];
+  // ── Phase 0: Adaptive mode (advanced difficulty only) ─────────────────────
+  let aiMode = 'balanced';
+  if (DIFFICULTY_ADAPTIVE[AI_DIFFICULTY]) {
+    if (enemyHP < 8)      aiMode = 'defensive';
+    if (playerHP < 8)     aiMode = 'aggro';
+    if (turnNumber > 7 && enemyField.filter(Boolean).length >= 3) aiMode = 'control';
+  }
+
+  // ── Phase A: Lethal check ─────────────────────────────────────────────────
+  // Only count cards that can actually attack this turn
+  const readyAttackers = enemyField.filter(
+    c => c && !c.hasAttacked && !c.summoningSickness && c.attack > 0
+  );
+  const aiGoingForLethal = readyAttackers.reduce((s, c) => s + c.attack, 0) >= playerHP;
+
+  // ── Phase B: Field-to-field merges ────────────────────────────────────────
+  const fieldMergeCandidates = [];
   for (let i = 0; i < MAX_SLOTS; i++) {
     for (let j = i + 1; j < MAX_SLOTS; j++) {
       const a = enemyField[i], b = enemyField[j];
       if (a && b && a.id === b.id && a.level < MAX_LEVEL) {
-        // merge the lower-level one into the higher (or first if equal)
         const keepIdx   = a.level >= b.level ? i : j;
         const removeIdx = keepIdx === i ? j : i;
-        fieldMerges.push({ keepIdx, removeIdx });
-        break; // one merge per slot per turn
+        const snap     = aiMakeSnap();
+        const merged   = getMergedCard(snap.enemyField[keepIdx]);
+        const projected = [...snap.enemyField];
+        projected[keepIdx]   = merged;
+        projected[removeIdx] = null;
+        const score = aiApplyNoise(aiEvaluateBoard({ ...snap, enemyField: projected }));
+        fieldMergeCandidates.push({ keepIdx, removeIdx, score });
       }
     }
-    if (fieldMerges.length >= 2) break; // cap at 2 merges/turn to keep pace
   }
-  for (const { keepIdx, removeIdx } of fieldMerges) {
+  if (AI_DIFFICULTY === 0) {
+    fieldMergeCandidates.sort(() => Math.random() - 0.5);
+  } else {
+    fieldMergeCandidates.sort((a, b) => b.score - a.score);
+  }
+  for (const { keepIdx, removeIdx } of fieldMergeCandidates.slice(0, DIFFICULTY_MERGE_LIMIT[AI_DIFFICULTY])) {
     const k = keepIdx, r = removeIdx;
     setTimeout(() => { if (!gameOver) mergeEnemyCards(k, r); }, delay);
     delay += 800;
   }
 
-  // ── Step 2: Hand-to-field merges (upgrade before playing new cards) ────────
-  // Only do this if the AI has a card in hand matching a field card
+  // ── Phase C: Hand-to-field merges ─────────────────────────────────────────
   const usedFieldSlots = new Set();
-  const handMerges = [];
+  const handMergeCandidates = [];
   for (const handCard of [...enemyHand]) {
     for (let fi = 0; fi < MAX_SLOTS; fi++) {
       if (usedFieldSlots.has(fi)) continue;
       const fc = enemyField[fi];
       if (fc && fc.id === handCard.id && fc.level < MAX_LEVEL) {
-        handMerges.push({ handCard, fi });
+        const snap      = aiMakeSnap();
+        const merged    = getMergedCard(snap.enemyField[fi]);
+        const projected = [...snap.enemyField];
+        projected[fi]   = merged;
+        const score = aiApplyNoise(aiEvaluateBoard({ ...snap, enemyField: projected }));
+        handMergeCandidates.push({ handCard, fi, score });
         usedFieldSlots.add(fi);
         break;
       }
     }
-    if (handMerges.length >= 2) break; // cap at 2 hand-merges/turn
   }
-  for (const { handCard, fi } of handMerges) {
+  if (AI_DIFFICULTY === 0) {
+    handMergeCandidates.sort(() => Math.random() - 0.5);
+  } else {
+    handMergeCandidates.sort((a, b) => b.score - a.score);
+  }
+  for (const { handCard, fi } of handMergeCandidates.slice(0, DIFFICULTY_MERGE_LIMIT[AI_DIFFICULTY])) {
     const capturedCard = handCard, capturedFi = fi;
     setTimeout(() => { if (!gameOver) mergeEnemyFromHand(capturedCard, capturedFi); }, delay);
     delay += 800;
   }
 
-  // ── Step 3: Play affordable cards (cheapest first) ────────────────────────
+  // ── Phase D: Summon cards from hand ───────────────────────────────────────
   delay += 200;
-  const playable = enemyHand
-    .map((c, i) => ({ card: c, i }))
-    .filter(x => x.card && x.card.manaCost <= enemyMana)
-    .sort((a, b) => a.card.manaCost - b.card.manaCost);
-
-  for (const { card } of playable) {
-    const slot = enemyField.findIndex(s => s === null);
-    if (slot === -1) break;
+  for (let round = 0; round < DIFFICULTY_MAX_PLAYS[AI_DIFFICULTY]; round++) {
+    const playCandidates = [];
+    const snap = aiMakeSnap();
+    for (const card of enemyHand) {
+      if (!card || card.manaCost > snap.enemyMana) continue;
+      for (let slot = 0; slot < MAX_SLOTS; slot++) {
+        if (snap.enemyField[slot] !== null) continue;
+        const projected = [...snap.enemyField];
+        projected[slot] = { ...card, summoningSickness: card.ability !== 'charge' };
+        let baseScore = aiEvaluateBoard({
+          ...snap,
+          enemyField:    projected,
+          enemyMana:     snap.enemyMana     - card.manaCost,
+          enemyManaUsed: snap.enemyManaUsed + card.manaCost,
+          enemyHandLen:  snap.enemyHandLen  - 1,
+        });
+        // Mode-based summon bias
+        if (aiMode === 'defensive') {
+          if (card.ability === 'taunt' || card.ability === 'heal') baseScore += 8;
+        } else if (aiMode === 'aggro') {
+          if (card.attack >= 4) baseScore += 6;
+          if (card.ability === 'taunt' || card.ability === 'heal') baseScore -= 3;
+        } else if (aiMode === 'control') {
+          const hasMergeTarget = enemyField.some(c => c && c.id === card.id && c.level < MAX_LEVEL);
+          if (hasMergeTarget) baseScore += 4;
+        }
+        const synergyBonus = aiGetSynergyBonus(card, snap.enemyField);
+        const score = aiApplyNoise(baseScore + synergyBonus);
+        playCandidates.push({ card, slot, score });
+        break; // one slot per card is enough for scoring
+      }
+    }
+    if (playCandidates.length === 0) break;
+    if (AI_DIFFICULTY === 0) {
+      playCandidates.sort((a, b) => a.card.manaCost - b.card.manaCost);
+    } else {
+      playCandidates.sort((a, b) => b.score - a.score);
+    }
+    const best = playCandidates[0];
+    const capturedCard = best.card, capturedSlot = best.slot;
     setTimeout(() => {
       if (gameOver) return;
-      const hIdx = enemyHand.indexOf(card);
-      if (hIdx === -1 || enemyMana < card.manaCost || enemyField[slot] !== null) return;
-      enemyMana -= card.manaCost;
-      card.summoningSickness = card.ability !== 'charge';
-      enemyField[slot] = card;
+      const hIdx       = enemyHand.indexOf(capturedCard);
+      const actualSlot = enemyField.findIndex(s => s === null);
+      if (hIdx === -1 || enemyMana < capturedCard.manaCost || actualSlot === -1) return;
+      enemyMana -= capturedCard.manaCost;
+      capturedCard.summoningSickness = capturedCard.ability !== 'charge';
+      enemyField[actualSlot] = capturedCard;
       enemyHand.splice(hIdx, 1);
       playPutCardSound();
-      playSound(card.id);
+      playSound(capturedCard.id);
       bgPulse = 0.35;
     }, delay);
     delay += 700;
+    if (AI_DIFFICULTY === 0) break;
   }
 
-  // ── Step 4: Attack with each field card ───────────────────────────────────
+  // ── Phase E: Battle phase ─────────────────────────────────────────────────
   delay += 300;
+
   for (let idx = 0; idx < MAX_SLOTS; idx++) {
     const capturedIdx = idx;
+    // Capture aiGoingForLethal at schedule time (it won't change mid-turn)
+    const capturedLethal = aiGoingForLethal;
     setTimeout(() => {
       if (gameOver) return;
       const card = enemyField[capturedIdx];
       if (!card || card.hasAttacked || card.summoningSickness || card.attack === 0) return;
 
+      // STEP 1 — Taunt hard rule: overrides all scoring and mode logic
       const tauntIdx = playerField.findIndex(c => c && c.ability === 'taunt');
       if (tauntIdx !== -1) {
         resolveAttack(false, capturedIdx, false, tauntIdx);
         return;
       }
-      const targets = playerField.map((c, i) => c ? i : -1).filter(i => i !== -1);
-      // Prefer attacking high-value player cards; fallback to hero
-      if (targets.length > 0 && Math.random() < 0.55) {
-        resolveAttack(false, capturedIdx, false, targets[Math.floor(Math.random() * targets.length)]);
-      } else {
+
+      // STEP 2 — If going for lethal, only attack hero (no scoring needed)
+      if (capturedLethal) {
         resolveAttack(false, capturedIdx, true, -1);
+        return;
+      }
+
+      // STEP 3 — Score all possible actions
+      const actions = [];
+      const heroKills = (playerHP - card.attack) <= 0;
+      let heroScore = heroKills ? 1000 : card.attack * 1.8;
+      if (aiMode === 'defensive') heroScore = -999;
+      if (aiMode === 'aggro')     heroScore += 5;
+      actions.push({ type: 'hero', score: aiApplyNoise(heroScore) });
+
+      for (let ti = 0; ti < MAX_SLOTS; ti++) {
+        const target = playerField[ti];
+        if (!target) continue;
+        const kills    = target.defense <= card.attack;
+        const survives = card.defense   >  target.attack;
+        let score = kills ? aiThreatAssess(target) * 1.5 : 0;
+        score += survives ? 2 : -3;
+        score += aiThreatAssess(target) * 0.4;
+        actions.push({ type: 'card', idx: ti, score: aiApplyNoise(score) });
+      }
+
+      actions.sort((a, b) => b.score - a.score);
+      const best = actions[0];
+
+      // Hold if best action is below difficulty threshold
+      if (!best || best.score < DIFFICULTY_HOLD_THRESHOLD[AI_DIFFICULTY]) return;
+
+      if (best.type === 'hero') {
+        resolveAttack(false, capturedIdx, true, -1);
+      } else {
+        resolveAttack(false, capturedIdx, false, best.idx);
       }
     }, delay);
     delay += 950;
   }
 
+  // ── Phase F: End turn ─────────────────────────────────────────────────────
   setTimeout(() => { if (!gameOver) startPlayerTurn(); }, delay + 400);
 }
 

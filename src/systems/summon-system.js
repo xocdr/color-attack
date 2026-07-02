@@ -239,12 +239,20 @@ export class SummonSystem {
     this._setMonsterOpacity(1, false);   // restore full opacity, disable transparency
     this._setState(SummonState.COMPLETE);
 
+    // Keep card mesh as a flat indicator below the monster — monster takes ownership.
+    if (this._cardMesh && this._anchor) {
+      this._cardMesh.position.set(this._anchor.x, 0.012, this._anchor.z);
+      this._cardMesh.rotation.x = 0;
+      this._pendingMonster.userData._cardIndicator = this._cardMesh;
+      this._cardMesh = null;
+    }
+    if (this._cardMesh) { this.scene.remove(this._cardMesh); this._cardMesh = null; }
+
     if (this.onComplete) this.onComplete(this._pendingMonster);
 
     // Reset for the next summon.
     this._pendingMonster  = null;
     this._pendingCardData = null;
-    this._cardMesh        = null;
     this._anchor          = null;
     this._setState(SummonState.IDLE);
   }
